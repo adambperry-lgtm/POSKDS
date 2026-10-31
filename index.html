@@ -1269,8 +1269,22 @@
       };
 
       // ========================================================================
-      // PER-ITEM OVEN SLOTS, COOK TIME & PREP TIME CUSTOMIZATION ENGINE
+      // TOTAL KITCHEN OVEN SLOTS & PER-ITEM OVEN SLOTS / COOK TIME ENGINE
       // ========================================================================
+      const setTotalOvenSlots = (rawValue) => {
+        const parsed = parseFloat(rawValue);
+        if (Number.isNaN(parsed)) return;
+        const clamped = Math.max(0.5, Math.min(64, Math.round(parsed * 100) / 100));
+        setKitchenConfig(prev => ({ ...prev, maxOvenSlots: clamped }));
+      };
+
+      const adjustTotalOvenSlots = (delta) => {
+        setKitchenConfig(prev => {
+          const next = Math.max(0.5, Math.min(64, Math.round((Number(prev.maxOvenSlots || 8) + delta) * 100) / 100));
+          return { ...prev, maxOvenSlots: next };
+        });
+      };
+
       const updateItemOvenAndTiming = (itemId, field, rawValue) => {
         const computeNextItem = (item) => {
           if (item.id !== itemId) return item;
@@ -2587,10 +2601,39 @@
                     </span>
                   </div>
                   <div>
-                    <span className="text-xs text-stone-400 block">Active Deck Slots Used</span>
-                    <span className="font-display font-black text-xl text-amber-400">
-                      {currentOvenSlotsUsed.toFixed(2)} / {kitchenConfig.maxOvenSlots} slots
-                    </span>
+                    <span className="text-xs text-stone-400 block">Active Deck Slots Used / Total</span>
+                    <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                      <span className="font-display font-black text-xl text-amber-400">
+                        {currentOvenSlotsUsed.toFixed(2)} /
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => adjustTotalOvenSlots(-1)}
+                        className="w-6 h-6 bg-stone-800 hover:bg-bucky-red text-white border border-stone-600 font-bold text-xs leading-none"
+                        title="Decrease total kitchen deck oven slots by 1"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="0.5"
+                        max="64"
+                        value={kitchenConfig.maxOvenSlots}
+                        onChange={e => setTotalOvenSlots(e.target.value)}
+                        className="w-16 px-1.5 py-0.5 text-center font-display font-black text-base text-amber-300 bg-stone-900 border border-amber-400/60 focus:outline-none focus:border-amber-300"
+                        title="Type total available deck oven slots"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustTotalOvenSlots(1)}
+                        className="w-6 h-6 bg-stone-800 hover:bg-bucky-red text-white border border-stone-600 font-bold text-xs leading-none"
+                        title="Increase total kitchen deck oven slots by 1"
+                      >
+                        +
+                      </button>
+                      <span className="text-xs text-stone-400 font-condensed uppercase">slots</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2968,25 +3011,98 @@
               {/* KITCHEN CONSTRAINT TUNING BAR */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div className="bg-white p-4 border-2 border-bucky-charcoal vintage-shadow flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between text-xs mb-1.5">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2 text-xs">
                       <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
-                        🔥 30-Yr-Old Deck Oven Capacity
+                        🔥 Total Deck Oven Slots
                       </span>
-                      <span className="font-display font-black text-sm text-bucky-red">
-                        {kitchenConfig.maxOvenSlots} Pie Slots
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => adjustTotalOvenSlots(-1)}
+                          className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed text-[11px] font-bold"
+                          title="Subtract 1 oven slot"
+                        >
+                          -1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => adjustTotalOvenSlots(-0.5)}
+                          className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed text-[11px] font-bold"
+                          title="Subtract 0.5 oven slot"
+                        >
+                          -.5
+                        </button>
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0.5"
+                          max="64"
+                          value={kitchenConfig.maxOvenSlots}
+                          onChange={e => setTotalOvenSlots(e.target.value)}
+                          className="w-16 px-1.5 py-0.5 text-center font-display font-black text-sm text-bucky-red bg-bucky-cream border-2 border-bucky-charcoal focus:outline-none"
+                          title="Type exact number of total deck oven slots"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => adjustTotalOvenSlots(0.5)}
+                          className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed text-[11px] font-bold"
+                          title="Add 0.5 oven slot"
+                        >
+                          +.5
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => adjustTotalOvenSlots(1)}
+                          className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed text-[11px] font-bold"
+                          title="Add 1 oven slot"
+                        >
+                          +1
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Quick Oven Deck Capacity Presets */}
+                    <div className="flex flex-wrap items-center justify-between gap-1 bg-bucky-parchment px-2 py-1 border border-stone-300">
+                      <span className="font-condensed uppercase text-[10px] font-bold text-stone-600">
+                        Deck Presets:
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          { label: "4 (1 Deck)", val: 4 },
+                          { label: "6 (Recovery)", val: 6 },
+                          { label: "8 (2 Decks)", val: 8 },
+                          { label: "10", val: 10 },
+                          { label: "12 (3 Decks)", val: 12 },
+                          { label: "16", val: 16 }
+                        ].map(preset => (
+                          <button
+                            key={preset.val}
+                            type="button"
+                            onClick={() => setTotalOvenSlots(preset.val)}
+                            className={`px-1.5 py-0.5 font-condensed text-[10px] font-bold border transition ${
+                              Number(kitchenConfig.maxOvenSlots) === preset.val
+                                ? "bg-bucky-red text-white border-bucky-charcoal"
+                                : "bg-white hover:bg-stone-100 text-bucky-charcoal border-stone-300"
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <input
                       type="range"
-                      min="4"
-                      max="16"
-                      value={kitchenConfig.maxOvenSlots}
-                      onChange={e => setKitchenConfig({ ...kitchenConfig, maxOvenSlots: Number(e.target.value) })}
+                      step="0.5"
+                      min="1"
+                      max="24"
+                      value={Math.min(24, kitchenConfig.maxOvenSlots)}
+                      onChange={e => setTotalOvenSlots(e.target.value)}
                       className="w-full accent-bucky-red"
                     />
-                    <p className="text-[11px] text-stone-600 mt-1">
-                      16" Round = 1.0 slot • 8x10 Detroit = 0.75 slot. Dial down if an oven deck needs a heat recovery break.
+                    <p className="text-[11px] text-stone-600">
+                      16" Round = 1.0 slot • 8x10 Detroit = 0.75 slot. Type any slot count or dial down when an oven deck needs a heat break.
                     </p>
                   </div>
                   <button
@@ -2997,48 +3113,94 @@
                   </button>
                 </div>
 
-                <div className="bg-white p-4 border-2 border-bucky-charcoal vintage-shadow">
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
-                      👨‍🍳 Active Sourdough Pizzaiolos
-                    </span>
-                    <span className="font-display font-black text-sm text-bucky-charcoal">
-                      {kitchenConfig.makeLineStaff} Staff
-                    </span>
+                <div className="bg-white p-4 border-2 border-bucky-charcoal vintage-shadow flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                        👨‍🍳 Active Sourdough Pizzaiolos
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setKitchenConfig(p => ({ ...p, makeLineStaff: Math.max(1, p.makeLineStaff - 1) }))}
+                          className="w-6 h-6 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={kitchenConfig.makeLineStaff}
+                          onChange={e => setKitchenConfig({ ...kitchenConfig, makeLineStaff: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                          className="w-12 px-1 py-0.5 text-center font-display font-black text-sm text-bucky-charcoal bg-bucky-cream border-2 border-bucky-charcoal"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setKitchenConfig(p => ({ ...p, makeLineStaff: Math.min(20, p.makeLineStaff + 1) }))}
+                          className="w-6 h-6 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="8"
+                      value={Math.min(8, kitchenConfig.makeLineStaff)}
+                      onChange={e => setKitchenConfig({ ...kitchenConfig, makeLineStaff: Number(e.target.value) })}
+                      className="w-full accent-bucky-red"
+                    />
+                    <p className="text-[11px] text-stone-600">
+                      Controls concurrent hand-stretching & topping speed on the make-line before pies hit the deck.
+                    </p>
                   </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={kitchenConfig.makeLineStaff}
-                    onChange={e => setKitchenConfig({ ...kitchenConfig, makeLineStaff: Number(e.target.value) })}
-                    className="w-full accent-bucky-red"
-                  />
-                  <p className="text-[11px] text-stone-600 mt-1">
-                    Controls concurrent hand-stretching & topping speed on the make-line before pies hit the deck.
-                  </p>
                 </div>
 
-                <div className="bg-white p-4 border-2 border-bucky-charcoal vintage-shadow">
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
-                      🍯 Ricotta / Hot Honey / Box Buffer
-                    </span>
-                    <span className="font-display font-black text-sm text-bucky-crust">
-                      {kitchenConfig.qualityBufferMins} mins
-                    </span>
+                <div className="bg-white p-4 border-2 border-bucky-charcoal vintage-shadow flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                        🍯 Ricotta / Hot Honey / Box Buffer
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setKitchenConfig(p => ({ ...p, qualityBufferMins: Math.max(0, p.qualityBufferMins - 1) }))}
+                          className="w-6 h-6 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="30"
+                          value={kitchenConfig.qualityBufferMins}
+                          onChange={e => setKitchenConfig({ ...kitchenConfig, qualityBufferMins: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                          className="w-12 px-1 py-0.5 text-center font-display font-black text-sm text-bucky-crust bg-bucky-cream border-2 border-bucky-charcoal"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setKitchenConfig(p => ({ ...p, qualityBufferMins: Math.min(30, p.qualityBufferMins + 1) }))}
+                          className="w-6 h-6 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="15"
+                      value={Math.min(15, kitchenConfig.qualityBufferMins)}
+                      onChange={e => setKitchenConfig({ ...kitchenConfig, qualityBufferMins: Number(e.target.value) })}
+                      className="w-full accent-bucky-red"
+                    />
+                    <p className="text-[11px] text-stone-600">
+                      Post-bake finishing time for house whipped ricotta dollops, Bucky's hot honey, fresh basil & boxing.
+                    </p>
                   </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={kitchenConfig.qualityBufferMins}
-                    onChange={e => setKitchenConfig({ ...kitchenConfig, qualityBufferMins: Number(e.target.value) })}
-                    className="w-full accent-bucky-red"
-                  />
-                  <p className="text-[11px] text-stone-600 mt-1">
-                    Post-bake finishing time for house whipped ricotta dollops, Bucky's hot honey, fresh basil & boxing.
-                  </p>
                 </div>
               </div>
 
@@ -4255,10 +4417,23 @@
 
                   <div className="flex items-center gap-5">
                     <div className="text-right">
-                      <span className="text-[10px] uppercase font-condensed text-stone-400 block">Active Deck Load</span>
-                      <span className="font-display font-black text-base text-amber-400">
-                        {currentOvenSlotsUsed.toFixed(2)} / {kitchenConfig.maxOvenSlots} slots
-                      </span>
+                      <span className="text-[10px] uppercase font-condensed text-stone-400 block">Active Deck Load / Total Slots</span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="font-display font-black text-base text-amber-400">
+                          {currentOvenSlotsUsed.toFixed(2)} /
+                        </span>
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0.5"
+                          max="64"
+                          value={kitchenConfig.maxOvenSlots}
+                          onChange={e => setTotalOvenSlots(e.target.value)}
+                          className="w-14 px-1 py-0.5 text-center font-display font-black text-sm text-amber-300 bg-stone-900 border border-amber-400"
+                          title="Edit total kitchen deck oven slots"
+                        />
+                        <span className="text-xs text-stone-400 font-condensed uppercase">slots</span>
+                      </div>
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] uppercase font-condensed text-stone-400 block">Live Wait Quote</span>
@@ -4275,8 +4450,73 @@
                   </div>
                 </div>
 
-                {/* Batch / Category Controls & Recovery Bake Bar */}
+                {/* Batch / Category Controls & Total Deck Oven Slots Bar */}
                 <div className="bg-bucky-parchment px-6 py-3.5 border-b-2 border-bucky-charcoal space-y-3 text-xs">
+                  {/* Row 1: Total Kitchen Deck Oven Slots Editor */}
+                  <div className="bg-white border-2 border-bucky-charcoal p-2.5 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-bucky-red text-white font-condensed uppercase text-[11px] font-bold px-2 py-0.5">
+                        🔥 Total Kitchen Oven Capacity
+                      </span>
+                      <span className="text-stone-600 text-[11px]">
+                        Set the total number of available pie slots across your 30-year-old deck ovens:
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => adjustTotalOvenSlots(-1)}
+                        className="px-2 py-1 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed font-bold"
+                      >
+                        -1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => adjustTotalOvenSlots(-0.5)}
+                        className="px-2 py-1 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed font-bold"
+                      >
+                        -.5
+                      </button>
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="0.5"
+                        max="64"
+                        value={kitchenConfig.maxOvenSlots}
+                        onChange={e => setTotalOvenSlots(e.target.value)}
+                        className="w-16 px-2 py-1 text-center font-display font-black text-sm text-bucky-red bg-bucky-cream border-2 border-bucky-charcoal"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustTotalOvenSlots(0.5)}
+                        className="px-2 py-1 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed font-bold"
+                      >
+                        +.5
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => adjustTotalOvenSlots(1)}
+                        className="px-2 py-1 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed font-bold"
+                      >
+                        +1
+                      </button>
+                      <span className="text-stone-400 mx-1">|</span>
+                      {[4, 6, 8, 10, 12, 16].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setTotalOvenSlots(val)}
+                          className={`px-2 py-1 font-condensed font-bold border ${
+                            Number(kitchenConfig.maxOvenSlots) === val
+                              ? "bg-bucky-charcoal text-white border-bucky-charcoal"
+                              : "bg-bucky-cream hover:bg-stone-200 text-bucky-charcoal border-stone-400"
+                          }`}
+                        >
+                          {val} Slots
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     {/* Quick Deck Recovery Adjustments */}
                     <div className="flex flex-wrap items-center gap-2">
