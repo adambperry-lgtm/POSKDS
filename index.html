@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bucky's Real Good Pizza — Chatham, NJ | Online Ordering, POS & Smart KDS</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://js.stripe.com/v3/"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -84,7 +85,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
+    const { useState, useEffect, useMemo, useRef } = React;
 
     // ============================================================================
     // 1. BUCKY'S REAL GOOD PIZZA (CHATHAM, NJ) MENU & KITCHEN CONSTRAINT METADATA
@@ -937,14 +938,41 @@
       const [newCustomInvNotes, setNewCustomInvNotes] = useState("");
       const [newCustomInvAddToMenu, setNewCustomInvAddToMenu] = useState(true);
 
-      // Checkout Modal & Payment State
+      // Checkout Modal & Stripe Payment Element State (Option 1)
       const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+      const [isStripeSettingsOpen, setIsStripeSettingsOpen] = useState(false);
       const [customerName, setCustomerName] = useState("");
       const [customerPhone, setCustomerPhone] = useState("");
-      const [cardNumber, setCardNumber] = useState("4242 •••• •••• 4242");
+      const [customerEmail, setCustomerEmail] = useState("");
+      const [cardNumber, setCardNumber] = useState("4242 4242 4242 4242");
       const [cardExpiry, setCardExpiry] = useState("08/28");
       const [cardCvc, setCardCvc] = useState("842");
+      const [cardZip, setCardZip] = useState("07928");
       const [orderConfirmation, setOrderConfirmation] = useState(null);
+
+      // Stripe Integration State (Supports Live Stripe.js Payment Element, Stripe Card Element & Sandbox Mode)
+      const [stripePublishableKey, setStripePublishableKey] = useState(() => {
+        try {
+          return localStorage.getItem("buckys_stripe_pk") || "";
+        } catch (e) {
+          return "";
+        }
+      });
+      const [draftStripePk, setDraftStripePk] = useState(() => {
+        try {
+          return localStorage.getItem("buckys_stripe_pk") || "";
+        } catch (e) {
+          return "";
+        }
+      });
+      const [stripePaymentTab, setStripePaymentTab] = useState("card"); // "card" | "apple_pay" | "google_pay" | "link"
+      const [stripeProcessing, setStripeProcessing] = useState(false);
+      const [stripeError, setStripeError] = useState("");
+      const [stripeMountStatus, setStripeMountStatus] = useState("SANDBOX"); // "SANDBOX" | "LOADING" | "PAYMENT_ELEMENT" | "CARD_ELEMENT"
+      const [stripeClientSecret, setStripeClientSecret] = useState("");
+      const stripeInstanceRef = useRef(null);
+      const stripeElementsRef = useRef(null);
+      const stripeMountedElementRef = useRef(null);
 
       // Compute real-time ready time quote whenever cart, active orders, or kitchen constraints change
       const liveQuote = useMemo(() => {
@@ -1407,8 +1435,163 @@
       const njSalesTax = cartSubtotal * 0.06625; // NJ 6.625% Sales Tax
       const cartTotal = cartSubtotal + njSalesTax;
 
+      // ========================================================================
+      // OPTION 1: EMBEDDED STRIPE PAYMENT ELEMENT & PAYMENTINTENT ENGINE
+      // ========================================================================
+      // 1. Auto-detect server-configured Stripe Publishable Key from /api/stripe-config if running with server.js
+      useEffect(() => {
+        fetch("/api/stripe-config")
+          .then(res => (res.ok ? res.json() : null))
+          .then(data => {
+            if (data && data.publishableKey && data.publishableKey.startsWith("pk_")) {
+              setStripePublishableKey(prev => prev || data.publishableKey);
+              setDraftStripePk(prev => prev || data.publishableKey);
+            }
+          })
+          .catch(() => {
+            // Static hosting (e.g., GitHub Pages) — uses localStorage key or interactive Stripe Sandbox
+          });
+      }, []);
+
+      // 2. When Checkout Modal opens, initialize Stripe PaymentIntent & mount Stripe Element if pk_ key is active
+      useEffect(() => {
+        if (!isCheckoutOpen) {
+          setStripeError("");
+          setStripeProcessing(false);
+          if (stripeMountedElementRef.current) {
+            try {
+              stripeMountedElementRef.current.destroy();
+            } catch (e) {}
+            stripeMountedElementRef.current = null;
+          }
+          return;
+        }
+
+        const cleanPk = stripePublishableKey.trim();
+        if (!cleanPk.startsWith("pk_") || typeof window.Stripe !== "function") {
+          setStripeMountStatus("SANDBOX");
+          return;
+        }
+
+        let cancelled = false;
+        setStripeMountStatus("LOADING");
+        setStripeError("");
+
+        const initStripeElement = async () => {
+          try {
+            const stripe = window.Stripe(cleanPk);
+            stripeInstanceRef.current = stripe;
+
+            // Step A: Attempt to create a PaymentIntent via backend endpoint (POST /api/create-payment-intent)
+            let clientSecret = "";
+            try {
+              const resp = await fetch("/api/create-payment-intent", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  cart: cart.map(i => ({ id: i.id, name: i.name, price: i.price, quantity: i.quantity })),
+                  customerName: customerName || "Online Guest",
+                  customerPhone: customerPhone || "(973) 200-2388",
+                  customerEmail: customerEmail || undefined,
+                  promisedTime: pickupTimingMode === "SCHEDULED" ? scheduledSlot : liveQuote.readyTimeFormatted
+                })
+              });
+              if (resp.ok) {
+                const data = await resp.json();
+                if (data && data.clientSecret) {
+                  clientSecret = data.clientSecret;
+                }
+              }
+            } catch (networkErr) {
+              // No backend running (e.g. GitHub Pages static demo) — will mount real Stripe Card Element below
+            }
+
+            if (cancelled) return;
+
+            const appearance = {
+              theme: "stripe",
+              variables: {
+                colorPrimary: "#C8281E",
+                colorBackground: "#FFFFFF",
+                colorText: "#161413",
+                colorDanger: "#C8281E",
+                fontFamily: "'DM Sans', system-ui, sans-serif",
+                borderRadius: "0px"
+              }
+            };
+
+            if (clientSecret) {
+              // Full Stripe Payment Element (Card + Apple Pay + Google Pay + Link) backed by PaymentIntent
+              setStripeClientSecret(clientSecret);
+              const elements = stripe.elements({ clientSecret, appearance });
+              stripeElementsRef.current = elements;
+              const paymentElement = elements.create("payment", { layout: "tabs" });
+              setStripeMountStatus("PAYMENT_ELEMENT");
+              setTimeout(() => {
+                const container = document.getElementById("stripe-payment-element-mount");
+                if (container && !cancelled) {
+                  container.innerHTML = "";
+                  paymentElement.mount("#stripe-payment-element-mount");
+                  stripeMountedElementRef.current = paymentElement;
+                }
+              }, 50);
+            } else {
+              // Client-only Stripe.js Mode: Mount official Stripe Card Element (tokenizes via Stripe iframe)
+              setStripeClientSecret("");
+              const elements = stripe.elements({ appearance });
+              stripeElementsRef.current = elements;
+              const cardElement = elements.create("card", {
+                hidePostalCode: false,
+                style: {
+                  base: {
+                    color: "#161413",
+                    fontFamily: "'DM Sans', system-ui, sans-serif",
+                    fontSize: "14px",
+                    "::placeholder": { color: "#78716c" }
+                  },
+                  invalid: { color: "#C8281E" }
+                }
+              });
+              setStripeMountStatus("CARD_ELEMENT");
+              setTimeout(() => {
+                const container = document.getElementById("stripe-card-element-mount");
+                if (container && !cancelled) {
+                  container.innerHTML = "";
+                  cardElement.mount("#stripe-card-element-mount");
+                  stripeMountedElementRef.current = cardElement;
+                }
+              }, 50);
+            }
+          } catch (err) {
+            if (!cancelled) {
+              setStripeError(err.message || "Could not initialize Stripe.js — check your Publishable Key.");
+              setStripeMountStatus("SANDBOX");
+            }
+          }
+        };
+
+        initStripeElement();
+        return () => {
+          cancelled = true;
+        };
+      }, [isCheckoutOpen, stripePublishableKey]);
+
+      const saveStripeKeyConfig = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        const trimmed = draftStripePk.trim();
+        setStripePublishableKey(trimmed);
+        try {
+          if (trimmed) {
+            localStorage.setItem("buckys_stripe_pk", trimmed);
+          } else {
+            localStorage.removeItem("buckys_stripe_pk");
+          }
+        } catch (err) {}
+        setIsStripeSettingsOpen(false);
+      };
+
       // Submit Order (Online or POS) -> Deducts Dough & Prep Inventory automatically!
-      const handlePlaceOrder = (sourceType, paymentLabel) => {
+      const handlePlaceOrder = (sourceType, paymentLabel, stripeTxId = null) => {
         if (cart.length === 0) return;
 
         // Deduct ordered quantities from live kitchen inventory
@@ -1429,10 +1612,13 @@
           ? `${scheduledSlot} (Pre-Order)`
           : liveQuote.readyTimeFormatted;
 
+        const generatedTxId = stripeTxId || `pi_3Q${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+
         const newOrder = {
           id: `ORD-${1044 + orders.length}`,
           customerName: customerName.trim() || (sourceType === "POS" ? "Walk-In Guest" : "Online Guest"),
           customerPhone: customerPhone.trim() || "(973) 200-2388",
+          customerEmail: customerEmail.trim() || undefined,
           source: sourceType,
           status: "QUEUED",
           createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -1440,6 +1626,7 @@
           estimatedMins: liveQuote.totalEstimatedMins,
           paid: true,
           paymentMethod: paymentLabel,
+          stripePaymentIntentId: generatedTxId,
           items: [...cart]
         };
 
@@ -1448,7 +1635,126 @@
         setCustomerName("");
         setCustomerPhone("");
         setIsCheckoutOpen(false);
+        setStripeProcessing(false);
+        setStripeError("");
         setOrderConfirmation(newOrder);
+      };
+
+      // Process Online Checkout via Option 1 (Stripe Payment Element / Card Element / Interactive Sandbox)
+      const handleStripeCheckoutSubmit = async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (cart.length === 0 || stripeProcessing) return;
+
+        if (!customerName.trim()) {
+          setStripeError("Please enter a pickup name for your order.");
+          return;
+        }
+        if (!customerPhone.trim()) {
+          setStripeError("Please enter a mobile phone number for your ready text alert.");
+          return;
+        }
+
+        setStripeError("");
+        setStripeProcessing(true);
+
+        // Mode A: Full Stripe Payment Element backed by a server PaymentIntent
+        if (stripeMountStatus === "PAYMENT_ELEMENT" && stripeInstanceRef.current && stripeElementsRef.current) {
+          try {
+            const { error, paymentIntent } = await stripeInstanceRef.current.confirmPayment({
+              elements: stripeElementsRef.current,
+              confirmParams: {
+                receipt_email: customerEmail.trim() || undefined,
+                payment_method_data: {
+                  billing_details: {
+                    name: customerName.trim(),
+                    phone: customerPhone.trim()
+                  }
+                }
+              },
+              redirect: "if_required"
+            });
+
+            if (error) {
+              setStripeError(error.message || "Payment failed. Please check your payment details.");
+              setStripeProcessing(false);
+              return;
+            }
+
+            if (paymentIntent && (paymentIntent.status === "succeeded" || paymentIntent.status === "processing")) {
+              handlePlaceOrder("ONLINE", `Stripe Paid (${paymentIntent.id.slice(0, 12)}…)`, paymentIntent.id);
+              return;
+            }
+          } catch (err) {
+            setStripeError(err.message || "Error confirming Stripe PaymentIntent.");
+            setStripeProcessing(false);
+            return;
+          }
+        }
+
+        // Mode B: Live Stripe.js Card Element (Client-side tokenization with pk_test_ / pk_live_)
+        if (stripeMountStatus === "CARD_ELEMENT" && stripeInstanceRef.current && stripeMountedElementRef.current) {
+          try {
+            const { error, paymentMethod } = await stripeInstanceRef.current.createPaymentMethod({
+              type: "card",
+              card: stripeMountedElementRef.current,
+              billing_details: {
+                name: customerName.trim(),
+                phone: customerPhone.trim(),
+                email: customerEmail.trim() || undefined
+              }
+            });
+
+            if (error) {
+              setStripeError(error.message || "Your card could not be verified by Stripe.");
+              setStripeProcessing(false);
+              return;
+            }
+
+            const brand = paymentMethod?.card?.brand ? paymentMethod.card.brand.toUpperCase() : "CARD";
+            const last4 = paymentMethod?.card?.last4 || "4242";
+            handlePlaceOrder("ONLINE", `Stripe ${brand} •••• ${last4}`, paymentMethod.id);
+            return;
+          } catch (err) {
+            setStripeError(err.message || "Error tokenizing card with Stripe.js.");
+            setStripeProcessing(false);
+            return;
+          }
+        }
+
+        // Mode C: Interactive Stripe Payment Element Sandbox (Default when no API key is entered yet)
+        setTimeout(() => {
+          const digits = cardNumber.replace(/\D/g, "");
+          if (stripePaymentTab === "card") {
+            if (digits.endsWith("0002")) {
+              setStripeError("Stripe Test Decline (card_declined): Your card was declined. Please try another card such as 4242 4242 4242 4242.");
+              setStripeProcessing(false);
+              return;
+            }
+            if (digits.endsWith("9995")) {
+              setStripeError("Stripe Test Decline (insufficient_funds): Your card has insufficient funds.");
+              setStripeProcessing(false);
+              return;
+            }
+            if (digits.length < 15) {
+              setStripeError("Your card number is incomplete.");
+              setStripeProcessing(false);
+              return;
+            }
+          }
+
+          const simPiId = `pi_3Q${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+          const last4 = digits.slice(-4) || "4242";
+          const methodLabel =
+            stripePaymentTab === "apple_pay"
+              ? "Stripe Apple Pay"
+              : stripePaymentTab === "google_pay"
+              ? "Stripe Google Pay"
+              : stripePaymentTab === "link"
+              ? "Stripe Link Instant Pay"
+              : `Stripe •••• ${last4}`;
+
+          handlePlaceOrder("ONLINE", methodLabel, simPiId);
+        }, 650);
       };
 
       // Advance KDS Order Status
@@ -1599,6 +1905,24 @@
                     </span>
                   )}
                 </button>
+                <button
+                  onClick={() => setIsStripeSettingsOpen(true)}
+                  title="Configure Stripe Publishable Key & Payment Element Settings"
+                  className={`px-2.5 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1 border ${
+                    stripePublishableKey.trim().startsWith("pk_")
+                      ? "bg-indigo-600 text-white border-indigo-400"
+                      : "bg-stone-800 text-stone-300 hover:text-white border-stone-600"
+                  }`}
+                >
+                  <span>💳 Stripe</span>
+                  <span className={`w-2 h-2 rounded-full ${
+                    stripePublishableKey.trim().startsWith("pk_live_")
+                      ? "bg-emerald-400"
+                      : stripePublishableKey.trim().startsWith("pk_test_")
+                      ? "bg-amber-300"
+                      : "bg-stone-400"
+                  }`} />
+                </button>
               </div>
             </div>
 
@@ -1634,8 +1958,13 @@
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">🍕</span>
                   <div>
-                    <p className="font-display font-bold text-base">
-                      Order {orderConfirmation.id} Fired to Bucky’s Kitchen! ({orderConfirmation.paymentMethod})
+                    <p className="font-display font-bold text-base flex flex-wrap items-center gap-2">
+                      <span>Order {orderConfirmation.id} Fired to Bucky’s Kitchen! ({orderConfirmation.paymentMethod})</span>
+                      {orderConfirmation.stripePaymentIntentId && (
+                        <span className="bg-emerald-950/80 border border-emerald-400/50 text-emerald-200 font-mono text-[11px] px-2 py-0.5 rounded">
+                          Stripe ID: {orderConfirmation.stripePaymentIntentId}
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-emerald-100">
                       Guest: <strong>{orderConfirmation.customerName}</strong> • Estimated Pickup Ready Time:{" "}
@@ -2881,17 +3210,25 @@
           </footer>
 
           {/* ================================================================= */}
-          {/* ONLINE CHECKOUT MODAL (TOAST / STRIPE STYLE)                      */}
+          {/* OPTION 1: EMBEDDED STRIPE PAYMENT ELEMENT CHECKOUT MODAL          */}
           {/* ================================================================= */}
           {isCheckoutOpen && (
             <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-md w-full p-6 space-y-5 vintage-shadow">
+              <form
+                onSubmit={handleStripeCheckoutSubmit}
+                className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-lg w-full p-6 space-y-4 vintage-shadow max-h-[92vh] overflow-y-auto"
+              >
                 <div className="flex items-start justify-between border-b-2 border-bucky-charcoal pb-3">
                   <div>
-                    <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
-                      465 Main St, Chatham NJ • Online Pickup
-                    </span>
-                    <h3 className="font-display font-black text-2xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
+                        465 Main St, Chatham NJ • Online Pickup
+                      </span>
+                      <span className="bg-indigo-600 text-white font-condensed uppercase text-[10px] tracking-wider px-2 py-0.5 font-bold">
+                        🔒 Secured by Stripe
+                      </span>
+                    </div>
+                    <h3 className="font-display font-black text-2xl mt-0.5">
                       Complete Your Order
                     </h3>
                     <p className="text-xs text-stone-700 font-semibold mt-0.5">
@@ -2901,18 +3238,30 @@
                       </span>
                     </p>
                   </div>
-                  <button
-                    onClick={() => setIsCheckoutOpen(false)}
-                    className="text-stone-500 hover:text-bucky-charcoal font-bold text-lg"
-                  >
-                    ✕
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsStripeSettingsOpen(true)}
+                      className="px-2 py-1 bg-white hover:bg-stone-100 border border-bucky-charcoal font-condensed uppercase text-[10px] font-bold text-stone-700"
+                      title="Configure Stripe Publishable Key"
+                    >
+                      ⚙️ Stripe Key
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsCheckoutOpen(false)}
+                      className="text-stone-500 hover:text-bucky-charcoal font-bold text-lg px-1"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-3 text-xs">
+                {/* Guest Contact Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
                     <label className="block font-condensed uppercase tracking-wider text-stone-700 mb-1 font-bold">
-                      Pickup Name
+                      Pickup Name *
                     </label>
                     <input
                       type="text"
@@ -2920,12 +3269,12 @@
                       placeholder="e.g. Alex Taylor"
                       value={customerName}
                       onChange={e => setCustomerName(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white border-2 border-bucky-charcoal text-bucky-charcoal font-medium"
+                      className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal text-bucky-charcoal font-medium"
                     />
                   </div>
                   <div>
                     <label className="block font-condensed uppercase tracking-wider text-stone-700 mb-1 font-bold">
-                      Mobile Phone (For Ready Text Alert)
+                      Mobile Phone (Ready Text Alert) *
                     </label>
                     <input
                       type="tel"
@@ -2933,46 +3282,352 @@
                       placeholder="(973) 555-0199"
                       value={customerPhone}
                       onChange={e => setCustomerPhone(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white border-2 border-bucky-charcoal text-bucky-charcoal font-medium"
+                      className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal text-bucky-charcoal font-medium"
                     />
                   </div>
-
-                  <div className="pt-2 border-t border-stone-300">
+                  <div className="sm:col-span-2">
                     <label className="block font-condensed uppercase tracking-wider text-stone-700 mb-1 font-bold">
-                      Payment Details (Toast / Stripe Online)
+                      Receipt Email (Optional — Sent by Stripe)
                     </label>
                     <input
-                      type="text"
-                      value={cardNumber}
-                      onChange={e => setCardNumber(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white border-2 border-bucky-charcoal text-bucky-charcoal font-medium mb-2"
+                      type="email"
+                      placeholder="alex@example.com"
+                      value={customerEmail}
+                      onChange={e => setCustomerEmail(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal text-bucky-charcoal font-medium"
                     />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={cardExpiry}
-                        onChange={e => setCardExpiry(e.target.value)}
-                        placeholder="MM/YY"
-                        className="px-3 py-2 bg-white border-2 border-bucky-charcoal text-bucky-charcoal font-medium"
-                      />
-                      <input
-                        type="text"
-                        value={cardCvc}
-                        onChange={e => setCardCvc(e.target.value)}
-                        placeholder="CVC"
-                        className="px-3 py-2 bg-white border-2 border-bucky-charcoal text-bucky-charcoal font-medium"
-                      />
+                  </div>
+                </div>
+
+                {/* EMBEDDED STRIPE PAYMENT ELEMENT CONTAINER (OPTION 1) */}
+                <div className="pt-2 border-t-2 border-bucky-charcoal space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="font-condensed uppercase tracking-wider text-bucky-charcoal font-bold flex items-center gap-1.5">
+                      <span>Stripe Payment Element</span>
+                      {stripeMountStatus === "PAYMENT_ELEMENT" && (
+                        <span className="bg-emerald-100 text-emerald-900 border border-emerald-700 px-1.5 py-0.2 text-[10px]">
+                          LIVE PAYMENTINTENT
+                        </span>
+                      )}
+                      {stripeMountStatus === "CARD_ELEMENT" && (
+                        <span className="bg-indigo-100 text-indigo-900 border border-indigo-700 px-1.5 py-0.2 text-[10px]">
+                          LIVE STRIPE.JS SDK
+                        </span>
+                      )}
+                      {stripeMountStatus === "SANDBOX" && (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-700 px-1.5 py-0.2 text-[10px]">
+                          INTERACTIVE TEST SANDBOX
+                        </span>
+                      )}
+                    </label>
+                    <span className="text-[11px] text-stone-500 font-medium">
+                      256-Bit TLS Encrypted
+                    </span>
+                  </div>
+
+                  {/* CASE 1: Loading Live Stripe.js Element */}
+                  {stripeMountStatus === "LOADING" && (
+                    <div className="p-6 bg-white border-2 border-bucky-charcoal text-center space-y-2">
+                      <div className="inline-block w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-xs font-semibold text-stone-600">
+                        Initializing secure Stripe Payment Element…
+                      </p>
                     </div>
+                  )}
+
+                  {/* CASE 2: Real Mounted Stripe Payment Element (Server PaymentIntent Mode) */}
+                  <div
+                    id="stripe-payment-element-mount"
+                    className={stripeMountStatus === "PAYMENT_ELEMENT" ? "bg-white p-3.5 border-2 border-bucky-charcoal" : "hidden"}
+                  />
+
+                  {/* CASE 3: Real Mounted Stripe Card Element (Client-Side pk_test_ / pk_live_ Mode) */}
+                  {stripeMountStatus === "CARD_ELEMENT" && (
+                    <div className="bg-white p-3.5 border-2 border-bucky-charcoal space-y-2">
+                      <span className="text-[10px] font-condensed uppercase tracking-wider text-indigo-700 font-bold block">
+                        Official Stripe.js Card Iframe ({stripePublishableKey.slice(0, 12)}…)
+                      </span>
+                      <div id="stripe-card-element-mount" className="py-2 px-2 border border-stone-300 bg-stone-50" />
+                    </div>
+                  )}
+
+                  {/* CASE 4: Interactive Stripe Payment Element Sandbox (When no pk_ key is configured yet) */}
+                  {stripeMountStatus === "SANDBOX" && (
+                    <div className="bg-white border-2 border-bucky-charcoal p-3.5 space-y-3">
+                      {/* Payment Method Tabs matching Stripe Payment Element layout: 'tabs' */}
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[
+                          { id: "card", label: "💳 Card" },
+                          { id: "apple_pay", label: "🍎 Apple Pay" },
+                          { id: "google_pay", label: "G Pay" },
+                          { id: "link", label: "🟢 Link" }
+                        ].map(tab => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => {
+                              setStripePaymentTab(tab.id);
+                              setStripeError("");
+                            }}
+                            className={`py-2 px-2 font-condensed uppercase tracking-wider text-[11px] font-bold border transition ${
+                              stripePaymentTab === tab.id
+                                ? "bg-bucky-charcoal text-white border-bucky-charcoal shadow-sm"
+                                : "bg-bucky-cream text-bucky-charcoal border-stone-300 hover:bg-stone-100"
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {stripePaymentTab === "card" ? (
+                        <div className="space-y-2.5">
+                          {/* Quick Stripe Test Card Presets */}
+                          <div className="flex flex-wrap items-center justify-between gap-1 bg-bucky-parchment px-2.5 py-1.5 border border-stone-300">
+                            <span className="font-condensed uppercase text-[10px] font-bold text-stone-600">
+                              Stripe Test Cards:
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCardNumber("4242 4242 4242 4242");
+                                  setStripeError("");
+                                }}
+                                className="px-1.5 py-0.5 bg-emerald-800 text-white font-mono text-[10px] font-bold"
+                                title="Stripe test card for approved Visa transaction"
+                              >
+                                ✓ 4242 (Approve)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCardNumber("5555 5555 5555 4444");
+                                  setStripeError("");
+                                }}
+                                className="px-1.5 py-0.5 bg-indigo-800 text-white font-mono text-[10px] font-bold"
+                                title="Stripe test card for approved Mastercard"
+                              >
+                                ✓ 4444 (MC)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCardNumber("4000 0000 0000 0002");
+                                  setStripeError("");
+                                }}
+                                className="px-1.5 py-0.5 bg-bucky-red text-white font-mono text-[10px] font-bold"
+                                title="Stripe test card to simulate generic card_declined error"
+                              >
+                                ⛔ 0002 (Decline)
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-condensed uppercase text-stone-500 font-bold mb-1">
+                              Card Number
+                            </label>
+                            <input
+                              type="text"
+                              value={cardNumber}
+                              onChange={e => setCardNumber(e.target.value)}
+                              placeholder="4242 4242 4242 4242"
+                              className="w-full px-3 py-2 bg-bucky-cream border border-bucky-charcoal font-mono text-xs font-bold"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-condensed uppercase text-stone-500 font-bold mb-1">
+                                Expiration
+                              </label>
+                              <input
+                                type="text"
+                                value={cardExpiry}
+                                onChange={e => setCardExpiry(e.target.value)}
+                                placeholder="MM / YY"
+                                className="w-full px-2.5 py-2 bg-bucky-cream border border-bucky-charcoal font-mono text-xs font-bold text-center"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-condensed uppercase text-stone-500 font-bold mb-1">
+                                CVC
+                              </label>
+                              <input
+                                type="text"
+                                value={cardCvc}
+                                onChange={e => setCardCvc(e.target.value)}
+                                placeholder="CVC"
+                                className="w-full px-2.5 py-2 bg-bucky-cream border border-bucky-charcoal font-mono text-xs font-bold text-center"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-condensed uppercase text-stone-500 font-bold mb-1">
+                                ZIP Code
+                              </label>
+                              <input
+                                type="text"
+                                value={cardZip}
+                                onChange={e => setCardZip(e.target.value)}
+                                placeholder="07928"
+                                className="w-full px-2.5 py-2 bg-bucky-cream border border-bucky-charcoal font-mono text-xs font-bold text-center"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-bucky-cream border border-stone-300 text-center space-y-1.5">
+                          <p className="font-display font-bold text-sm text-bucky-charcoal">
+                            {stripePaymentTab === "apple_pay"
+                              ? "🍎 Express Checkout with Apple Pay"
+                              : stripePaymentTab === "google_pay"
+                              ? "G Pay Express Checkout with Google Pay"
+                              : "🟢 Instant 1-Click Checkout with Stripe Link"}
+                          </p>
+                          <p className="text-[11px] text-stone-600">
+                            Click the pay button below to authorize <strong>${cartTotal.toFixed(2)}</strong> via Stripe Wallet token.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Error Banner (e.g. Stripe card_declined or incomplete fields) */}
+                  {stripeError && (
+                    <div className="p-3 bg-red-50 border-2 border-bucky-red text-bucky-red text-xs font-semibold flex items-start gap-2">
+                      <span>⛔</span>
+                      <span>{stripeError}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Order Total Summary inside Modal */}
+                <div className="bg-bucky-parchment border border-bucky-charcoal p-3 text-xs space-y-1">
+                  <div className="flex justify-between text-stone-600">
+                    <span>Subtotal ({cart.reduce((s, i) => s + i.quantity, 0)} items)</span>
+                    <span className="font-bold">${cartSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-stone-600">
+                    <span>NJ Sales Tax (6.625%)</span>
+                    <span className="font-bold">${njSalesTax.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-display font-black text-bucky-charcoal pt-1 border-t border-stone-300">
+                    <span>Total Charge</span>
+                    <span className="text-bucky-red">${cartTotal.toFixed(2)}</span>
                   </div>
                 </div>
 
                 <button
-                  onClick={() => handlePlaceOrder("ONLINE", "Toast Online Paid")}
-                  className="w-full py-3.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-widest text-sm font-bold border-2 border-bucky-charcoal vintage-shadow transition"
+                  type="submit"
+                  disabled={stripeProcessing}
+                  className="w-full py-3.5 bg-bucky-red hover:bg-bucky-darkred disabled:bg-stone-500 text-white font-condensed uppercase tracking-widest text-sm font-bold border-2 border-bucky-charcoal vintage-shadow transition flex items-center justify-center gap-2"
                 >
-                  Authorize ${cartTotal.toFixed(2)} & Send to Kitchen
+                  {stripeProcessing ? (
+                    <>
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Authorizing with Stripe…</span>
+                    </>
+                  ) : (
+                    <span>🔒 Pay ${cartTotal.toFixed(2)} & Fire to Kitchen</span>
+                  )}
                 </button>
-              </div>
+              </form>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* STRIPE CONFIGURATION & API KEYS MODAL                             */}
+          {/* ================================================================= */}
+          {isStripeSettingsOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <form
+                onSubmit={saveStripeKeyConfig}
+                className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-lg w-full p-6 space-y-4 vintage-shadow"
+              >
+                <div className="flex items-start justify-between border-b-2 border-bucky-charcoal pb-3">
+                  <div>
+                    <span className="font-condensed uppercase tracking-widest text-xs text-indigo-700 font-bold">
+                      Option 1 • Embedded Stripe Payment Element & SDK
+                    </span>
+                    <h3 className="font-display font-black text-2xl">
+                      💳 Stripe Payment Processor Setup
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsStripeSettingsOpen(false)}
+                    className="text-stone-500 hover:text-bucky-charcoal font-bold text-lg"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <p className="text-stone-700 leading-relaxed">
+                    Enter your <strong>Stripe Publishable Key</strong> (<code className="bg-white px-1 py-0.5 border border-stone-300">pk_test_...</code> or <code className="bg-white px-1 py-0.5 border border-stone-300">pk_live_...</code>) to mount the live <strong>Stripe.js v3</strong> iframe inside the checkout modal. Leave blank to use the built-in <strong>Interactive Stripe Sandbox</strong> for demos.
+                  </p>
+
+                  <div>
+                    <label className="block font-condensed uppercase tracking-wider text-stone-700 mb-1 font-bold">
+                      Stripe Publishable Key (pk_test_... or pk_live_...)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="pk_test_51P..."
+                      value={draftStripePk}
+                      onChange={e => setDraftStripePk(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-white border-2 border-bucky-charcoal font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="bg-bucky-parchment border-2 border-bucky-charcoal p-3.5 space-y-2">
+                    <div className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                      Included Server Endpoints in Project Folder:
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-[11px] text-stone-700">
+                      <li>
+                        <strong>Serverless PaymentIntent API:</strong> <code className="bg-white px-1 border">api/create-payment-intent.js</code> calculates NJ 6.625% tax on the server and creates a real Stripe <code className="bg-white px-1 border">PaymentIntent</code>.
+                      </li>
+                      <li>
+                        <strong>Express Backend:</strong> Run <code className="bg-white px-1 border">STRIPE_SECRET_KEY=sk_test_... node server.js</code> locally or on Railway/Render/Vercel for full end-to-end Payment Element + Apple Pay / Google Pay checkout.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between gap-3 border-t-2 border-bucky-charcoal">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftStripePk("");
+                      setStripePublishableKey("");
+                      try {
+                        localStorage.removeItem("buckys_stripe_pk");
+                      } catch (e) {}
+                      setIsStripeSettingsOpen(false);
+                    }}
+                    className="px-3 py-2 bg-white hover:bg-stone-200 text-stone-700 font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                  >
+                    Use Demo Sandbox Mode
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsStripeSettingsOpen(false)}
+                      className="px-4 py-2 bg-white hover:bg-stone-200 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-bold border-2 border-bucky-charcoal"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-condensed uppercase tracking-widest text-xs font-bold border-2 border-bucky-charcoal vintage-shadow-sm"
+                    >
+                      ✓ Save Stripe Config
+                    </button>
+                  </div>
+                </div>
+              </form>
             </div>
           )}
 
