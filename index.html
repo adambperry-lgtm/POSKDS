@@ -2048,13 +2048,19 @@
                 <span>465 Main Street, Chatham, NJ 07928 • Online Ordering Only (No Phone Orders)</span>
               </div>
               <div className="flex items-center gap-3 font-condensed uppercase tracking-wider text-xs">
-                <span>Live Oven Wait: ~{liveQuote.totalEstimatedMins}m ({liveQuote.readyTimeFormatted})</span>
-                <span className="hidden md:inline text-white/70">|</span>
-                <span className="hidden md:inline">
-                  16" Dough: <strong>{roundDoughStock}</strong> • Detroit Pans: <strong>{detroitPanStock}</strong>
-                </span>
-                <span className="hidden lg:inline text-white/70">|</span>
-                <span className="hidden lg:inline">Deck Ovens: {currentOvenSlotsUsed.toFixed(1)}/{kitchenConfig.maxOvenSlots} Slots</span>
+                {activeView === "ONLINE" ? (
+                  <span>Estimated Pickup Ready Time: {liveQuote.readyTimeFormatted} (~{liveQuote.totalEstimatedMins}m)</span>
+                ) : (
+                  <>
+                    <span>Live Oven Wait: ~{liveQuote.totalEstimatedMins}m ({liveQuote.readyTimeFormatted})</span>
+                    <span className="hidden md:inline text-white/70">|</span>
+                    <span className="hidden md:inline">
+                      16" Dough: <strong>{roundDoughStock}</strong> • Detroit Pans: <strong>{detroitPanStock}</strong>
+                    </span>
+                    <span className="hidden lg:inline text-white/70">|</span>
+                    <span className="hidden lg:inline">Deck Ovens: {currentOvenSlotsUsed.toFixed(1)}/{kitchenConfig.maxOvenSlots} Slots</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -2580,7 +2586,9 @@
                     {selectedCategory}
                   </h2>
                   <span className="text-xs font-condensed uppercase tracking-wider text-stone-600">
-                    Synced with Live KDS Dough & Prep Inventory
+                    {activeView === "ONLINE"
+                      ? "Hand-Stretched & Baked Fresh to Order"
+                      : "Synced with Live KDS Dough & Prep Inventory"}
                   </span>
                 </div>
 
@@ -2635,16 +2643,22 @@
                         </div>
 
                         <div className="mt-5 pt-3 border-t border-stone-200 flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-[11px] font-medium text-stone-600">
-                            <span className="px-2 py-0.5 bg-bucky-cream border border-stone-300">
-                              ⏱️ {item.prepTimeMins}m prep + {item.cookTimeMins}m bake
-                            </span>
-                            {item.ovenSlots > 0 && (
-                              <span className="px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-900 font-semibold">
-                                🔥 {item.ovenSlots} deck slot
+                          {activeView === "POS" ? (
+                            <div className="flex items-center gap-2 text-[11px] font-medium text-stone-600">
+                              <span className="px-2 py-0.5 bg-bucky-cream border border-stone-300">
+                                ⏱️ {item.prepTimeMins}m prep + {item.cookTimeMins}m bake
                               </span>
-                            )}
-                          </div>
+                              {item.ovenSlots > 0 && (
+                                <span className="px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-900 font-semibold">
+                                  🔥 {item.ovenSlots} deck slot
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-condensed uppercase tracking-wider text-stone-500 font-semibold">
+                              {avail.available ? "Fresh to Order" : "Sold Out Today"}
+                            </span>
+                          )}
 
                           <button
                             disabled={!avail.available || avail.maxCanAdd <= 0}
@@ -2739,12 +2753,14 @@
                     </div>
                   )}
 
-                  {/* DYNAMIC KITCHEN PACING BREAKDOWN CARD */}
+                  {/* DYNAMIC PICKUP ESTIMATE CARD (HIDES PREP/BAKE/OVEN SLOTS ON CUSTOMER VIEW) */}
                   <div className="bg-bucky-parchment border-2 border-bucky-charcoal p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="font-condensed uppercase tracking-wider text-xs font-bold text-bucky-charcoal">
-                        {pickupTimingMode === "SCHEDULED" && activeView === "ONLINE"
-                          ? "Reserved Oven Slot"
+                        {activeView === "ONLINE"
+                          ? pickupTimingMode === "SCHEDULED"
+                            ? "Scheduled Pickup Time"
+                            : "Estimated Pickup Ready Time"
                           : "Live Deck Oven Promise"}
                       </span>
                       <span className="font-display font-black text-base text-bucky-red">
@@ -2753,29 +2769,31 @@
                           : `${liveQuote.readyTimeFormatted} (~${liveQuote.totalEstimatedMins}m)`}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5 text-center">
-                      <div className="bg-white p-1.5 border border-stone-300">
-                        <span className="text-[10px] uppercase font-condensed text-stone-500 block">Make-Line</span>
-                        <span className="text-xs font-bold text-bucky-charcoal">{liveQuote.breakdown.makeLineDelay}m</span>
+                    {activeView === "POS" && (
+                      <div className="grid grid-cols-3 gap-1.5 text-center">
+                        <div className="bg-white p-1.5 border border-stone-300">
+                          <span className="text-[10px] uppercase font-condensed text-stone-500 block">Make-Line</span>
+                          <span className="text-xs font-bold text-bucky-charcoal">{liveQuote.breakdown.makeLineDelay}m</span>
+                        </div>
+                        <div className="bg-white p-1.5 border border-stone-300">
+                          <span className="text-[10px] uppercase font-condensed text-stone-500 block">Oven Queue</span>
+                          <span className="text-xs font-bold text-bucky-red">{liveQuote.breakdown.ovenBacklogDelay}m</span>
+                        </div>
+                        <div className="bg-white p-1.5 border border-stone-300">
+                          <span className="text-[10px] uppercase font-condensed text-stone-500 block">Bake + Box</span>
+                          <span className="text-xs font-bold text-bucky-charcoal">
+                            {liveQuote.breakdown.totalCookDuration + liveQuote.breakdown.qualityBufferMins}m
+                          </span>
+                        </div>
                       </div>
-                      <div className="bg-white p-1.5 border border-stone-300">
-                        <span className="text-[10px] uppercase font-condensed text-stone-500 block">Oven Queue</span>
-                        <span className="text-xs font-bold text-bucky-red">{liveQuote.breakdown.ovenBacklogDelay}m</span>
-                      </div>
-                      <div className="bg-white p-1.5 border border-stone-300">
-                        <span className="text-[10px] uppercase font-condensed text-stone-500 block">Bake + Box</span>
-                        <span className="text-xs font-bold text-bucky-charcoal">
-                          {liveQuote.breakdown.totalCookDuration + liveQuote.breakdown.qualityBufferMins}m
-                        </span>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* CART ITEMS */}
                   {cart.length === 0 ? (
                     <div className="text-center py-8 px-4 border-2 border-dashed border-stone-300 bg-bucky-cream/50 text-stone-600 text-xs space-y-1">
                       <p className="font-display font-bold text-sm text-bucky-charcoal">Your pizza box is empty!</p>
-                      <p>Add 16" sourdough rounds, 8x10 Detroit squares, or starters to compute live bake times.</p>
+                      <p>Add 16" sourdough rounds, 8x10 Detroit squares, or starters to build your pickup order.</p>
                     </div>
                   ) : (
                     <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
@@ -2787,7 +2805,8 @@
                           <div className="flex-1 pr-2">
                             <p className="font-display font-bold text-bucky-charcoal text-sm">{item.name}</p>
                             <p className="text-stone-600">
-                              ${item.price.toFixed(2)} ea • {(item.ovenSlots * item.quantity).toFixed(2)} oven slots
+                              ${item.price.toFixed(2)} each
+                              {activeView === "POS" && ` • ${(item.ovenSlots * item.quantity).toFixed(2)} oven slots`}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
