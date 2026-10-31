@@ -889,25 +889,72 @@
     // ============================================================================
     // 5. MAIN APPLICATION COMPONENT
     // ============================================================================
+    const SHARED_STORAGE_KEY = "buckys_shared_state_v1";
+    const SYNC_CHANNEL_NAME = "buckys_realtime_sync_v1";
+
+    function loadPersistedSharedState() {
+      try {
+        const raw = localStorage.getItem(SHARED_STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch (e) {
+        return null;
+      }
+    }
+
     function BuckysSystemApp() {
-      const [activeView, setActiveView] = useState("ONLINE"); // "ONLINE" | "POS" | "KDS"
+      // Detect URL mode parameter (?mode=customer | ?mode=pos | ?mode=kds | ?view=customer)
+      const initialUrlMode = useMemo(() => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          return (params.get("mode") || params.get("view") || "").toLowerCase();
+        } catch (e) {
+          return "";
+        }
+      }, []);
+
+      const [isCustomerLocked, setIsCustomerLocked] = useState(() => initialUrlMode === "customer");
+      const [activeView, setActiveView] = useState(() => {
+        if (initialUrlMode === "pos") return "POS";
+        if (initialUrlMode === "kds") return "KDS";
+        return "ONLINE";
+      }); // "ONLINE" | "POS" | "KDS"
+
       const [onlineSubPage, setOnlineSubPage] = useState("MENU"); // "MENU" | "GUIDELINES" | "STORY" | "CATERING"
       const [selectedCategory, setSelectedCategory] = useState("Specials");
-      const [orders, setOrders] = useState(INITIAL_ORDERS);
+      const [orders, setOrders] = useState(() => loadPersistedSharedState()?.orders || INITIAL_ORDERS);
       const [cart, setCart] = useState([]);
       const [pickupTimingMode, setPickupTimingMode] = useState("ASAP"); // "ASAP" | "SCHEDULED"
       const [scheduledSlot, setScheduledSlot] = useState("5:30 PM");
 
       // Kitchen Constraints State (30+ Year Old Deck Ovens & Make-Line Staff)
-      const [kitchenConfig, setKitchenConfig] = useState({
+      const [kitchenConfig, setKitchenConfig] = useState(() => loadPersistedSharedState()?.kitchenConfig || {
         maxOvenSlots: 8,       // Deck oven capacity (30+ year old ovens!)
         makeLineStaff: 2,      // Active pizzaiolos stretching sourdough
         qualityBufferMins: 3   // Whipped ricotta dollops, hot honey drizzle, basil & boxing
       });
 
       // Dynamic Menu & Live Inventory State (Managed in KDS, synced with Online & POS)
-      const [menuItems, setMenuItems] = useState(BUCKYS_MENU);
-      const [inventory, setInventory] = useState(INITIAL_INVENTORY);
+      const [menuItems, setMenuItems] = useState(() => loadPersistedSharedState()?.menuItems || BUCKYS_MENU);
+      const [inventory, setInventory] = useState(() => loadPersistedSharedState()?.inventory || INITIAL_INVENTORY);
+
+      // Real-Time Multi-Tab / Multi-Device Sync & Staff PIN Security State
+      const [isSyncLauncherOpen, setIsSyncLauncherOpen] = useState(false);
+      const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+      const [pinInput, setPinInput] = useState("");
+      const [pinError, setPinError] = useState("");
+      const [staffPinCode, setStaffPinCode] = useState("1914");
+      const [kdsAudioChimeEnabled, setKdsAudioChimeEnabled] = useState(true);
+      const [lastSyncTimestamp, setLastSyncTimestamp] = useState(null);
+      const [syncPulseActive, setSyncPulseActive] = useState(false);
+      const [incomingTicketAlert, setIncomingTicketAlert] = useState(null);
+      const tabIdRef = useRef(`tab-${Math.random().toString(36).substring(2, 9)}`);
+      const isApplyingRemoteSyncRef = useRef(false);
+      const prevOrderCountRef = useRef((loadPersistedSharedState()?.orders || INITIAL_ORDERS).length);
+      const kdsChimeEnabledRef = useRef(true);
+      useEffect(() => {
+        kdsChimeEnabledRef.current = kdsAudioChimeEnabled;
+      }, [kdsAudioChimeEnabled]);
       const [kdsInventoryFilter, setKdsInventoryFilter] = useState("ALL"); // "ALL" | "MENU_ALL" | "DOUGH" | "PREP" | "ALERTS" | Menu Category
       const [kdsSearchQuery, setKdsSearchQuery] = useState("");
       const [showKdsInventoryPanel, setShowKdsInventoryPanel] = useState(true);
@@ -985,6 +1032,182 @@
           .filter(o => o.status === "IN_OVEN")
           .reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.ovenSlots * i.quantity, 0), 0);
       }, [orders]);
+
+      // ==========================================================================
+      // REAL-TIME CROSS-TAB & CROSS-DEVICE SYNC ENGINE + KITCHEN TICKET CHIME
+      // ==========================================================================
+      const playKitchenTicketChime = () => {
+        if (!kdsChimeEnabledRef.current) return;
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return;
+          const ctx = new AudioCtx();
+          // Two-tone restaurant kitchen bell ("Ding-Dong!")
+          const playTone = (freq, startTime, duration) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(freq, startTime);
+            gain.gain.setValueAtTime(0.22, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(startTime);
+            osc.stop(startTime + duration);
+          };
+          const now = ctx.currentTime;
+          playTone(880, now, 0.32);        // A5
+          playTone(1174.66, now + 0.14, 0.45); // D6
+        } catch (e) {}
+      };
+
+      const applyIncomingSyncPayload = (payload) => {
+        if (!payload || payload.senderId === tabIdRef.current) return;
+        isApplyingRemoteSyncRef.current = true;
+
+        if (Array.isArray(payload.orders)) {
+          if (payload.orders.length > prevOrderCountRef.current) {
+            const newest = payload.orders[0];
+            playKitchenTicketChime();
+            if (newest) {
+              setIncomingTicketAlert(newest);
+              setTimeout(() => setIncomingTicketAlert(null), 7000);
+            }
+          }
+          prevOrderCountRef.current = payload.orders.length;
+          setOrders(payload.orders);
+        }
+        if (Array.isArray(payload.inventory)) {
+          setInventory(payload.inventory);
+        }
+        if (Array.isArray(payload.menuItems)) {
+          setMenuItems(payload.menuItems);
+        }
+        if (payload.kitchenConfig) {
+          setKitchenConfig(payload.kitchenConfig);
+        }
+
+        setLastSyncTimestamp(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+        setSyncPulseActive(true);
+        setTimeout(() => {
+          setSyncPulseActive(false);
+          isApplyingRemoteSyncRef.current = false;
+        }, 120);
+      };
+
+      // Subscribe to BroadcastChannel (same-device tabs), localStorage 'storage' events, and Server-Sent Events (/api/stream)
+      useEffect(() => {
+        let bc = null;
+        if (typeof window.BroadcastChannel === "function") {
+          bc = new BroadcastChannel(SYNC_CHANNEL_NAME);
+          bc.onmessage = (ev) => {
+            if (ev && ev.data) applyIncomingSyncPayload(ev.data);
+          };
+        }
+
+        const handleStorageEvent = (ev) => {
+          if (ev.key === SHARED_STORAGE_KEY && ev.newValue) {
+            try {
+              const parsed = JSON.parse(ev.newValue);
+              applyIncomingSyncPayload(parsed);
+            } catch (e) {}
+          }
+        };
+        window.addEventListener("storage", handleStorageEvent);
+
+        // Optional Server-Sent Events stream when running with node server.js (syncs across separate phones & iPads)
+        let es = null;
+        try {
+          es = new EventSource("/api/stream");
+          es.onmessage = (ev) => {
+            try {
+              const parsed = JSON.parse(ev.data);
+              applyIncomingSyncPayload(parsed);
+            } catch (e) {}
+          };
+          es.onerror = () => {
+            // Static hosting (GitHub Pages / python http.server) — close SSE quietly and rely on BroadcastChannel + localStorage
+            if (es) es.close();
+          };
+        } catch (e) {}
+
+        return () => {
+          if (bc) bc.close();
+          window.removeEventListener("storage", handleStorageEvent);
+          if (es) es.close();
+        };
+      }, []);
+
+      // Broadcast whenever orders, inventory, menuItems, or kitchenConfig change locally
+      useEffect(() => {
+        prevOrderCountRef.current = orders.length;
+        if (isApplyingRemoteSyncRef.current) return;
+
+        const payload = {
+          senderId: tabIdRef.current,
+          updatedAt: Date.now(),
+          orders,
+          inventory,
+          menuItems,
+          kitchenConfig
+        };
+
+        try {
+          localStorage.setItem(SHARED_STORAGE_KEY, JSON.stringify(payload));
+        } catch (e) {}
+
+        if (typeof window.BroadcastChannel === "function") {
+          try {
+            const bc = new BroadcastChannel(SYNC_CHANNEL_NAME);
+            bc.postMessage(payload);
+            bc.close();
+          } catch (e) {}
+        }
+
+        // Also push to backend /api/sync-state if server.js is running
+        fetch("/api/sync-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      }, [orders, inventory, menuItems, kitchenConfig]);
+
+      // Customer View Lock & Staff PIN Unlock Handlers
+      const lockToCustomerMode = () => {
+        setActiveView("ONLINE");
+        setIsCustomerLocked(true);
+        setIsSyncLauncherOpen(false);
+      };
+
+      const handleStaffPinSubmit = (e, targetViewAfterUnlock = "KDS") => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (pinInput.trim() === staffPinCode) {
+          setIsCustomerLocked(false);
+          setIsPinModalOpen(false);
+          setPinInput("");
+          setPinError("");
+          setActiveView(targetViewAfterUnlock);
+        } else {
+          setPinError("Invalid Staff PIN. (Demo PIN is 1914)");
+        }
+      };
+
+      const openModeInNewWindow = (modeParam) => {
+        const baseUrl = window.location.origin + window.location.pathname;
+        window.open(`${baseUrl}?mode=${modeParam}`, "_blank", "noopener,noreferrer");
+      };
+
+      const resetDemoStateAllScreens = () => {
+        setOrders(INITIAL_ORDERS);
+        setInventory(INITIAL_INVENTORY);
+        setMenuItems(BUCKYS_MENU);
+        setKitchenConfig({
+          maxOvenSlots: 8,
+          makeLineStaff: 2,
+          qualityBufferMins: 3
+        });
+        setIsSyncLauncherOpen(false);
+      };
 
       // ==========================================================================
       // INVENTORY TELEMETRY & AVAILABILITY ENGINE
@@ -1876,68 +2099,98 @@
                 </nav>
               )}
 
-              {/* System Mode Switcher (Online Storefront vs Staff POS vs Kitchen KDS) */}
-              <div className="flex items-center gap-2 bg-stone-900 p-1.5 rounded-lg border border-stone-700">
-                <button
-                  onClick={() => setActiveView("ONLINE")}
-                  className={`px-3 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition ${
-                    activeView === "ONLINE"
-                      ? "bg-bucky-red text-white shadow"
-                      : "text-stone-300 hover:text-white"
-                  }`}
-                >
-                  🌐 Customer Site
-                </button>
-                <button
-                  onClick={() => setActiveView("POS")}
-                  className={`px-3 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition ${
-                    activeView === "POS"
-                      ? "bg-bucky-red text-white shadow"
-                      : "text-stone-300 hover:text-white"
-                  }`}
-                >
-                  🖥️ Shop POS
-                </button>
-                <button
-                  onClick={() => setActiveView("KDS")}
-                  className={`px-3 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1.5 ${
-                    activeView === "KDS"
-                      ? "bg-bucky-red text-white shadow"
-                      : "text-stone-300 hover:text-white"
-                  }`}
-                >
-                  <span>🔥 Kitchen KDS</span>
-                  <span className="px-1.5 py-0.2 bg-white text-bucky-charcoal font-bold rounded-full text-[11px]">
-                    {orders.filter(o => o.status !== "PICKED_UP").length}
+              {/* System Mode Switcher (Hidden when locked in Public Customer Mode!) */}
+              {isCustomerLocked ? (
+                <div className="flex items-center gap-3">
+                  <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 bg-stone-900 border border-stone-700 text-[11px] font-condensed uppercase tracking-wider text-stone-300">
+                    <span className={`w-2 h-2 rounded-full ${syncPulseActive ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
+                    <span>Live Kitchen Sync Active</span>
                   </span>
-                  {lowOr86Count > 0 && (
-                    <span
-                      title={`${lowOr86Count} kitchen inventory items low or 86'd`}
-                      className="px-1.5 py-0.2 bg-amber-400 text-bucky-charcoal font-extrabold rounded-full text-[10px]"
-                    >
-                      ⚠️ {lowOr86Count}
+                  <button
+                    onClick={() => setOnlineSubPage("MENU")}
+                    className="px-3.5 py-1.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-white/20"
+                  >
+                    🍕 Pickup Bag ({cart.reduce((s, i) => s + i.quantity, 0)})
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-1.5 bg-stone-900 p-1.5 rounded-lg border border-stone-700">
+                  <button
+                    onClick={() => setActiveView("ONLINE")}
+                    className={`px-3 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition ${
+                      activeView === "ONLINE"
+                        ? "bg-bucky-red text-white shadow"
+                        : "text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    🌐 Customer Site
+                  </button>
+                  <button
+                    onClick={() => setActiveView("POS")}
+                    className={`px-3 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition ${
+                      activeView === "POS"
+                        ? "bg-bucky-red text-white shadow"
+                        : "text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    🖥️ Shop POS
+                  </button>
+                  <button
+                    onClick={() => setActiveView("KDS")}
+                    className={`px-3 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1.5 ${
+                      activeView === "KDS"
+                        ? "bg-bucky-red text-white shadow"
+                        : "text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    <span>🔥 Kitchen KDS</span>
+                    <span className="px-1.5 py-0.2 bg-white text-bucky-charcoal font-bold rounded-full text-[11px]">
+                      {orders.filter(o => o.status !== "PICKED_UP").length}
                     </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setIsStripeSettingsOpen(true)}
-                  title="Configure Stripe Publishable Key & Payment Element Settings"
-                  className={`px-2.5 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1 border ${
-                    stripePublishableKey.trim().startsWith("pk_")
-                      ? "bg-indigo-600 text-white border-indigo-400"
-                      : "bg-stone-800 text-stone-300 hover:text-white border-stone-600"
-                  }`}
-                >
-                  <span>💳 Stripe</span>
-                  <span className={`w-2 h-2 rounded-full ${
-                    stripePublishableKey.trim().startsWith("pk_live_")
-                      ? "bg-emerald-400"
-                      : stripePublishableKey.trim().startsWith("pk_test_")
-                      ? "bg-amber-300"
-                      : "bg-stone-400"
-                  }`} />
-                </button>
-              </div>
+                    {lowOr86Count > 0 && (
+                      <span
+                        title={`${lowOr86Count} kitchen inventory items low or 86'd`}
+                        className="px-1.5 py-0.2 bg-amber-400 text-bucky-charcoal font-extrabold rounded-full text-[10px]"
+                      >
+                        ⚠️ {lowOr86Count}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setIsStripeSettingsOpen(true)}
+                    title="Configure Stripe Publishable Key & Payment Element Settings"
+                    className={`px-2.5 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1 border ${
+                      stripePublishableKey.trim().startsWith("pk_")
+                        ? "bg-indigo-600 text-white border-indigo-400"
+                        : "bg-stone-800 text-stone-300 hover:text-white border-stone-600"
+                    }`}
+                  >
+                    <span>💳 Stripe</span>
+                    <span className={`w-2 h-2 rounded-full ${
+                      stripePublishableKey.trim().startsWith("pk_live_")
+                        ? "bg-emerald-400"
+                        : stripePublishableKey.trim().startsWith("pk_test_")
+                        ? "bg-amber-300"
+                        : "bg-stone-400"
+                    }`} />
+                  </button>
+                  <button
+                    onClick={() => setIsSyncLauncherOpen(true)}
+                    title="Open Multi-Screen Sync & Customer/Staff Mode Launcher"
+                    className="px-2.5 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-200 border border-emerald-600"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${syncPulseActive ? "bg-amber-300 animate-ping" : "bg-emerald-400"}`} />
+                    <span>⚡ Live Sync</span>
+                  </button>
+                  <button
+                    onClick={lockToCustomerMode}
+                    title="Lock this tab into Public Customer Storefront Mode (hides Staff POS & KDS)"
+                    className="px-2.5 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition bg-stone-800 hover:bg-amber-400 hover:text-bucky-charcoal text-stone-300 border border-stone-600"
+                  >
+                    🔒 Customer Lock
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Mobile Sub-Navigation Bar for Customer Site */}
@@ -1964,6 +2217,47 @@
           </header>
 
           {/* ================================================================= */}
+          {/* REAL-TIME INCOMING TICKET BANNER (TRIGGERED ACROSS TABS/DEVICES)  */}
+          {/* ================================================================= */}
+          {incomingTicketAlert && !isCustomerLocked && (
+            <div className="bg-amber-400 text-bucky-charcoal border-b-2 border-bucky-charcoal px-4 py-3 shadow-md animate-pulse">
+              <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🔔</span>
+                  <div>
+                    <p className="font-display font-black text-base">
+                      LIVE SYNC: New {incomingTicketAlert.source} Ticket {incomingTicketAlert.id} Received!
+                    </p>
+                    <p className="text-xs font-semibold">
+                      Guest: <strong>{incomingTicketAlert.customerName}</strong> • Promised: <strong>{incomingTicketAlert.promisedTime}</strong> •{" "}
+                      {incomingTicketAlert.items.map(i => `${i.quantity}x ${i.name}`).join(", ")}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {activeView !== "KDS" && (
+                    <button
+                      onClick={() => {
+                        setActiveView("KDS");
+                        setIncomingTicketAlert(null);
+                      }}
+                      className="px-3 py-1.5 bg-bucky-charcoal text-white font-condensed uppercase tracking-wider text-xs font-bold"
+                    >
+                      Open Kitchen KDS →
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIncomingTicketAlert(null)}
+                    className="px-2 py-1 text-xs font-bold hover:underline"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
           {/* ORDER CONFIRMATION BANNER                                         */}
           {/* ================================================================= */}
           {orderConfirmation && (
@@ -1982,20 +2276,22 @@
                     </p>
                     <p className="text-xs text-emerald-100">
                       Guest: <strong>{orderConfirmation.customerName}</strong> • Estimated Pickup Ready Time:{" "}
-                      <span className="underline font-bold">{orderConfirmation.promisedTime}</span> (~{orderConfirmation.estimatedMins} mins • Dough & prep inventory automatically deducted)
+                      <span className="underline font-bold">{orderConfirmation.promisedTime}</span> (~{orderConfirmation.estimatedMins} mins • Synced live to Chatham Kitchen KDS)
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setActiveView("KDS");
-                      setOrderConfirmation(null);
-                    }}
-                    className="font-condensed uppercase tracking-wider text-xs bg-white text-bucky-charcoal hover:bg-bucky-cream font-bold px-3.5 py-2 rounded vintage-shadow-sm"
-                  >
-                    View on Kitchen KDS & Inventory →
-                  </button>
+                  {!isCustomerLocked && (
+                    <button
+                      onClick={() => {
+                        setActiveView("KDS");
+                        setOrderConfirmation(null);
+                      }}
+                      className="font-condensed uppercase tracking-wider text-xs bg-white text-bucky-charcoal hover:bg-bucky-cream font-bold px-3.5 py-2 rounded vintage-shadow-sm"
+                    >
+                      View on Kitchen KDS & Inventory →
+                    </button>
+                  )}
                   <button
                     onClick={() => setOrderConfirmation(null)}
                     className="text-xs text-emerald-200 hover:text-white px-2 py-1"
@@ -3367,6 +3663,26 @@
                 <p className="text-stone-300">
                   Official Site: <a href="https://buckysrealgoodpizza.com/" target="_blank" rel="noreferrer" className="text-bucky-red hover:underline font-bold">buckysrealgoodpizza.com</a>
                 </p>
+                <div className="pt-2 border-t border-stone-800 flex flex-wrap gap-2">
+                  {isCustomerLocked ? (
+                    <button
+                      onClick={() => {
+                        setPinError("");
+                        setIsPinModalOpen(true);
+                      }}
+                      className="px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white font-condensed uppercase tracking-wider text-[11px] border border-stone-700"
+                    >
+                      🔐 Staff Terminal Login (PIN)
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setIsSyncLauncherOpen(true)}
+                      className="px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-emerald-300 font-condensed uppercase tracking-wider text-[11px] border border-stone-700"
+                    >
+                      ⚡ Multi-Screen Sync & Mode Launcher
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </footer>
@@ -4833,6 +5149,289 @@
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* LIVE MULTI-SCREEN SYNC & CUSTOMER/STAFF MODE LAUNCHER MODAL       */}
+          {/* ================================================================= */}
+          {isSyncLauncherOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-2xl w-full p-6 space-y-5 vintage-shadow max-h-[92vh] overflow-y-auto">
+                <div className="flex items-start justify-between border-b-2 border-bucky-charcoal pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="bg-emerald-800 text-white font-condensed uppercase text-[11px] tracking-wider px-2 py-0.5 font-bold">
+                        ⚡ Live Cross-Tab & Cross-Device Sync Active
+                      </span>
+                      {lastSyncTimestamp && (
+                        <span className="text-[11px] text-stone-600 font-mono">
+                          Last synced: {lastSyncTimestamp}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-display font-black text-2xl mt-1">
+                      Customer Storefront vs. Staff POS/KDS Mode
+                    </h3>
+                    <p className="text-xs text-stone-700 mt-0.5">
+                      Open the public Customer Site and the internal Kitchen KDS side-by-side in separate windows. Every order, 86'd item, and oven slot update syncs live!
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setIsSyncLauncherOpen(false)}
+                    className="text-stone-500 hover:text-bucky-charcoal font-bold text-lg px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* 3 Role-Specific Window Launchers */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="bg-white border-2 border-bucky-charcoal p-4 flex flex-col justify-between space-y-3 vintage-shadow-sm">
+                    <div>
+                      <span className="bg-bucky-red text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold">
+                        External Public Site
+                      </span>
+                      <h4 className="font-display font-bold text-base mt-1.5">
+                        📱 Customer Storefront
+                      </h4>
+                      <p className="text-[11px] text-stone-600 mt-1 leading-relaxed">
+                        Opens <code className="bg-stone-100 px-1 border">?mode=customer</code> with all POS & KDS controls hidden. Customers only see the menu, live wait quote, and Stripe checkout.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => openModeInNewWindow("customer")}
+                      className="w-full py-2 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                    >
+                      ↗ Open Customer Window
+                    </button>
+                  </div>
+
+                  <div className="bg-white border-2 border-bucky-charcoal p-4 flex flex-col justify-between space-y-3 vintage-shadow-sm">
+                    <div>
+                      <span className="bg-bucky-charcoal text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold">
+                        Internal Counter iPad
+                      </span>
+                      <h4 className="font-display font-bold text-base mt-1.5">
+                        🖥️ Shop Counter POS
+                      </h4>
+                      <p className="text-[11px] text-stone-600 mt-1 leading-relaxed">
+                        Opens <code className="bg-stone-100 px-1 border">?mode=pos</code> for 465 Main St counter walk-ins with Card Terminal & Cash tender buttons.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => openModeInNewWindow("pos")}
+                      className="w-full py-2 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                    >
+                      ↗ Open Counter POS Window
+                    </button>
+                  </div>
+
+                  <div className="bg-white border-2 border-bucky-charcoal p-4 flex flex-col justify-between space-y-3 vintage-shadow-sm">
+                    <div>
+                      <span className="bg-amber-400 text-bucky-charcoal font-condensed uppercase text-[10px] px-2 py-0.5 font-bold border border-bucky-charcoal">
+                        Internal Kitchen Screen
+                      </span>
+                      <h4 className="font-display font-bold text-base mt-1.5">
+                        🔥 Kitchen KDS & Dough
+                      </h4>
+                      <p className="text-[11px] text-stone-600 mt-1 leading-relaxed">
+                        Opens <code className="bg-stone-100 px-1 border">?mode=kds</code> with audio ticket chime, 4-stage oven board, and live dough/menu inventory.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => openModeInNewWindow("kds")}
+                      className="w-full py-2 bg-amber-400 hover:bg-amber-300 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-extrabold border border-bucky-charcoal"
+                    >
+                      ↗ Open Kitchen KDS Window
+                    </button>
+                  </div>
+                </div>
+
+                {/* Audio Chime & Staff PIN Settings */}
+                <div className="bg-bucky-parchment border-2 border-bucky-charcoal p-4 space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal block">
+                        🔔 Kitchen KDS Incoming Ticket Bell Chime
+                      </span>
+                      <span className="text-[11px] text-stone-600">
+                        Automatically rings when a customer places an order in another tab or device.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={playKitchenTicketChime}
+                        className="px-3 py-1.5 bg-white hover:bg-stone-100 text-bucky-charcoal font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                      >
+                        🔊 Test Bell Chime
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKdsAudioChimeEnabled(prev => !prev)}
+                        className={`px-3 py-1.5 font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal ${
+                          kdsAudioChimeEnabled
+                            ? "bg-emerald-800 text-white"
+                            : "bg-stone-300 text-stone-700"
+                        }`}
+                      >
+                        {kdsAudioChimeEnabled ? "✓ Chime ON" : "Muted"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-stone-300 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal block">
+                        🔐 Staff Terminal Unlock PIN (Default: {staffPinCode})
+                      </span>
+                      <span className="text-[11px] text-stone-600">
+                        Used to unlock Staff POS & KDS from the footer when locked in Public Customer Mode.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        maxLength={8}
+                        value={staffPinCode}
+                        onChange={e => setStaffPinCode(e.target.value)}
+                        className="w-20 px-2 py-1 bg-white border-2 border-bucky-charcoal font-mono font-bold text-center"
+                      />
+                      <button
+                        type="button"
+                        onClick={lockToCustomerMode}
+                        className="px-3 py-1.5 bg-bucky-charcoal hover:bg-bucky-red text-white font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                      >
+                        🔒 Lock This Tab to Customer View
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={resetDemoStateAllScreens}
+                    className="px-3 py-2 bg-white hover:bg-stone-200 text-stone-700 font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                  >
+                    ↺ Reset All Synced Demo Data to Defaults
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSyncLauncherOpen(false)}
+                    className="px-6 py-2 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-widest text-sm font-bold border-2 border-bucky-charcoal vintage-shadow-sm"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* STAFF TERMINAL PIN UNLOCK MODAL (SHOWN FROM CUSTOMER FOOTER)      */}
+          {/* ================================================================= */}
+          {isPinModalOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <form
+                onSubmit={e => handleStaffPinSubmit(e, "KDS")}
+                className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-sm w-full p-6 space-y-4 vintage-shadow"
+              >
+                <div className="flex items-start justify-between border-b-2 border-bucky-charcoal pb-3">
+                  <div>
+                    <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
+                      465 Main St • Chatham Staff Access
+                    </span>
+                    <h3 className="font-display font-black text-2xl">
+                      🔐 Staff Terminal Login
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPinModalOpen(false)}
+                    className="text-stone-500 hover:text-bucky-charcoal font-bold text-lg"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <p className="text-stone-600">
+                    Enter the 4-digit Staff PIN to unlock <strong>Shop Counter POS</strong> and <strong>Kitchen KDS & Inventory</strong> on this device.
+                  </p>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-condensed uppercase tracking-wider text-stone-700 font-bold">
+                        Staff PIN Code
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPinInput(staffPinCode);
+                          setPinError("");
+                        }}
+                        className="text-[11px] font-condensed uppercase text-bucky-red hover:underline font-bold"
+                      >
+                        Auto-Fill Demo PIN ({staffPinCode})
+                      </button>
+                    </div>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      placeholder="••••"
+                      value={pinInput}
+                      onChange={e => {
+                        setPinInput(e.target.value);
+                        setPinError("");
+                      }}
+                      className="w-full px-3 py-2.5 bg-white border-2 border-bucky-charcoal text-center font-mono text-xl font-black tracking-[0.4em]"
+                    />
+                  </div>
+
+                  {/* Quick Keypad Buttons */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-1">
+                    {["1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "⌫"].map(key => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          setPinError("");
+                          if (key === "CLR") setPinInput("");
+                          else if (key === "⌫") setPinInput(prev => prev.slice(0, -1));
+                          else setPinInput(prev => (prev + key).slice(0, 8));
+                        }}
+                        className="py-2 bg-white hover:bg-bucky-parchment border border-bucky-charcoal font-display font-bold text-sm"
+                      >
+                        {key}
+                      </button>
+                    ))}
+                  </div>
+
+                  {pinError && (
+                    <div className="p-2.5 bg-red-50 border border-bucky-red text-bucky-red font-bold text-center">
+                      {pinError}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t-2 border-bucky-charcoal">
+                  <button
+                    type="button"
+                    onClick={e => handleStaffPinSubmit(e, "POS")}
+                    className="py-2.5 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                  >
+                    🖥️ Unlock POS
+                  </button>
+                  <button
+                    type="submit"
+                    className="py-2.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                  >
+                    🔥 Unlock KDS
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>
