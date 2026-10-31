@@ -101,13 +101,14 @@
     // ============================================================================
     // 1B. KITCHEN DOUGH & SIGNATURE INGREDIENT INVENTORY METADATA
     // ============================================================================
-    const INITIAL_INVENTORY = [
+    const BASE_KITCHEN_INVENTORY = [
       // DOUGH & PANS (Cold-fermented sourdough & pan allocations)
       {
         id: "dough-round-16",
         name: "16\" Sourdough Dough Balls",
         shortName: "16\" Sourdough Ball",
         category: "DOUGH",
+        isMenuItem: false,
         stock: 32,
         dailyPar: 60,
         lowThreshold: 10,
@@ -121,6 +122,7 @@
         name: "8x10 Detroit Blue Steel Pans",
         shortName: "8x10 Detroit Pan",
         category: "DOUGH",
+        isMenuItem: false,
         stock: 14,
         dailyPar: 28,
         lowThreshold: 5,
@@ -134,6 +136,7 @@
         name: "Grandma Square Pan Dough",
         shortName: "Grandma Pan",
         category: "DOUGH",
+        isMenuItem: false,
         stock: 7,
         dailyPar: 12,
         lowThreshold: 3,
@@ -147,6 +150,7 @@
         name: "Sourdough Garlic Knot Portions",
         shortName: "Garlic Knots (6pc)",
         category: "DOUGH",
+        isMenuItem: false,
         stock: 12,
         dailyPar: 20,
         lowThreshold: 4,
@@ -162,6 +166,7 @@
         name: "Breaded Chicken Cutlets",
         shortName: "Chicken Cutlet",
         category: "PREP",
+        isMenuItem: false,
         stock: 9,
         dailyPar: 20,
         lowThreshold: 4,
@@ -175,6 +180,7 @@
         name: "House Whipped Ricotta",
         shortName: "Whipped Ricotta",
         category: "PREP",
+        isMenuItem: false,
         stock: 19,
         dailyPar: 35,
         lowThreshold: 6,
@@ -188,6 +194,7 @@
         name: "Cup & Char Pepperoni",
         shortName: "Cup & Char Pep",
         category: "PREP",
+        isMenuItem: false,
         stock: 22,
         dailyPar: 40,
         lowThreshold: 8,
@@ -201,6 +208,7 @@
         name: "Foraged Organic Mushroom Blend",
         shortName: "Organic Mushrooms",
         category: "PREP",
+        isMenuItem: false,
         stock: 4, // Starts low to demonstrate live KDS low-stock alert!
         dailyPar: 16,
         lowThreshold: 5,
@@ -214,6 +222,7 @@
         name: "House Crumbled Fennel Sausage",
         shortName: "House Sausage",
         category: "PREP",
+        isMenuItem: false,
         stock: 13,
         dailyPar: 22,
         lowThreshold: 5,
@@ -227,6 +236,7 @@
         name: "House Beef & Pork Meatballs (3pc)",
         shortName: "Meatballs (3pc)",
         category: "PREP",
+        isMenuItem: false,
         stock: 8,
         dailyPar: 16,
         lowThreshold: 3,
@@ -240,6 +250,7 @@
         name: "Sicilian Sheep's Milk Cannoli",
         shortName: "Cannoli Shells",
         category: "PREP",
+        isMenuItem: false,
         stock: 11,
         dailyPar: 24,
         lowThreshold: 4,
@@ -679,6 +690,36 @@
         station: "COLD",
         inventoryUsage: {}
       }
+    ].map(item => ({
+      ...item,
+      // Ensure every menu item also tracks its own direct inventory ID alongside shared dough/prep
+      inventoryUsage: { ...(item.inventoryUsage || {}), [item.id]: 1 }
+    }));
+
+    // Build complete INITIAL_INVENTORY: Base Dough/Prep + All 30 Menu Items
+    const INITIAL_INVENTORY = [
+      ...BASE_KITCHEN_INVENTORY,
+      ...BUCKYS_MENU.map(item => {
+        const isPizza = item.station === "PIZZA";
+        const isDrink = item.id.startsWith("bev-");
+        const defaultPar = isPizza ? 20 : isDrink ? 36 : 18;
+        const defaultStock = item.id === "ny-white-mushroom" ? 4 : (isPizza ? 14 : isDrink ? 28 : 12);
+        return {
+          id: item.id,
+          name: item.name,
+          shortName: item.name,
+          category: item.category,
+          isMenuItem: true,
+          price: item.price,
+          stock: defaultStock,
+          dailyPar: defaultPar,
+          lowThreshold: isPizza ? 4 : 5,
+          unit: isPizza ? "pies" : isDrink ? "bottles/cans" : "orders",
+          traySize: isPizza ? 6 : 12,
+          eightySixed: false,
+          notes: `${item.category} • $${item.price.toFixed(2)} — ${item.description}`
+        };
+      })
     ];
 
     // ============================================================================
@@ -863,18 +904,32 @@
         qualityBufferMins: 3   // Whipped ricotta dollops, hot honey drizzle, basil & boxing
       });
 
-      // Live Pizza & Prep Inventory State (Managed in KDS, synced with Online & POS)
+      // Dynamic Menu & Live Inventory State (Managed in KDS, synced with Online & POS)
+      const [menuItems, setMenuItems] = useState(BUCKYS_MENU);
       const [inventory, setInventory] = useState(INITIAL_INVENTORY);
-      const [kdsInventoryFilter, setKdsInventoryFilter] = useState("ALL"); // "ALL" | "DOUGH" | "PREP" | "ALERTS"
+      const [kdsInventoryFilter, setKdsInventoryFilter] = useState("ALL"); // "ALL" | "MENU_ALL" | "DOUGH" | "PREP" | "ALERTS" | Menu Category
+      const [kdsSearchQuery, setKdsSearchQuery] = useState("");
       const [showKdsInventoryPanel, setShowKdsInventoryPanel] = useState(true);
       const [isBulkInventoryOpen, setIsBulkInventoryOpen] = useState(false);
+      const [isAddCustomModalOpen, setIsAddCustomModalOpen] = useState(false);
       const [draftInventory, setDraftInventory] = useState([]);
       const [bulkFillValue, setBulkFillValue] = useState("20");
+
+      // Custom Inventory / Menu Item Creator State
       const [newCustomInvName, setNewCustomInvName] = useState("");
-      const [newCustomInvCategory, setNewCustomInvCategory] = useState("PREP");
+      const [newCustomInvCategory, setNewCustomInvCategory] = useState("Specials");
       const [newCustomInvStock, setNewCustomInvStock] = useState("15");
       const [newCustomInvPar, setNewCustomInvPar] = useState("25");
-      const [newCustomInvUnit, setNewCustomInvUnit] = useState("portions");
+      const [newCustomInvLow, setNewCustomInvLow] = useState("5");
+      const [newCustomInvTray, setNewCustomInvTray] = useState("6");
+      const [newCustomInvUnit, setNewCustomInvUnit] = useState("pies");
+      const [newCustomInvPrice, setNewCustomInvPrice] = useState("28.00");
+      const [newCustomInvPrepMins, setNewCustomInvPrepMins] = useState("4");
+      const [newCustomInvCookMins, setNewCustomInvCookMins] = useState("12");
+      const [newCustomInvOvenSlots, setNewCustomInvOvenSlots] = useState("1.0");
+      const [newCustomInvDoughId, setNewCustomInvDoughId] = useState("dough-round-16");
+      const [newCustomInvNotes, setNewCustomInvNotes] = useState("");
+      const [newCustomInvAddToMenu, setNewCustomInvAddToMenu] = useState(true);
 
       // Checkout Modal & Payment State
       const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -1094,27 +1149,83 @@
         );
       };
 
-      // Add a new custom inventory item from the Bulk Modal
+      // Add a new custom inventory item (from either the dedicated Add Custom Modal or Bulk Modal)
       const handleAddCustomInventoryItem = (e) => {
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
         if (!newCustomInvName.trim()) return;
+
+        const customId = `custom-${Date.now()}`;
         const stockNum = Math.max(0, parseInt(newCustomInvStock, 10) || 0);
         const parNum = Math.max(1, parseInt(newCustomInvPar, 10) || 20);
+        const lowNum = Math.max(1, parseInt(newCustomInvLow, 10) || Math.max(2, Math.round(parNum * 0.2)));
+        const trayNum = Math.max(1, parseInt(newCustomInvTray, 10) || 6);
+        const priceNum = Math.max(0, parseFloat(newCustomInvPrice) || 0);
+        const prepNum = Math.max(0, parseInt(newCustomInvPrepMins, 10) || 0);
+        const cookNum = Math.max(0, parseInt(newCustomInvCookMins, 10) || 0);
+        const slotsNum = Math.max(0, parseFloat(newCustomInvOvenSlots) || 0);
+
+        const isKitchenOnlyCat = newCustomInvCategory === "DOUGH" || newCustomInvCategory === "PREP";
+        const shouldPublishToMenu = !isKitchenOnlyCat && newCustomInvAddToMenu;
+
         const newItem = {
-          id: `custom-${Date.now()}`,
+          id: customId,
           name: newCustomInvName.trim(),
           shortName: newCustomInvName.trim(),
           category: newCustomInvCategory,
+          isMenuItem: shouldPublishToMenu,
+          isCustom: true,
+          price: shouldPublishToMenu ? priceNum : undefined,
           stock: stockNum,
           dailyPar: parNum,
-          lowThreshold: Math.max(2, Math.round(parNum * 0.2)),
-          unit: newCustomInvUnit.trim() || "portions",
-          traySize: 6,
+          lowThreshold: lowNum,
+          unit: newCustomInvUnit.trim() || (shouldPublishToMenu ? "orders" : "portions"),
+          traySize: trayNum,
           eightySixed: stockNum === 0,
-          notes: "Custom kitchen inventory item"
+          notes: newCustomInvNotes.trim() || (shouldPublishToMenu
+            ? `Custom ${newCustomInvCategory} item • $${priceNum.toFixed(2)}`
+            : "Custom kitchen inventory item")
         };
-        setDraftInventory(prev => [...prev, newItem]);
+
+        // Add to live inventory (and draftInventory if bulk modal is open)
+        setInventory(prev => [newItem, ...prev]);
+        if (isBulkInventoryOpen) {
+          setDraftInventory(prev => [newItem, ...prev]);
+        }
+
+        // If publishing to the Online Storefront & Counter POS Menu, add to menuItems too!
+        if (shouldPublishToMenu) {
+          const usageMap = { [customId]: 1 };
+          if (newCustomInvDoughId && newCustomInvDoughId !== "NONE") {
+            usageMap[newCustomInvDoughId] = 1;
+          }
+          const newMenuEntry = {
+            id: customId,
+            name: newCustomInvName.trim(),
+            category: newCustomInvCategory,
+            price: priceNum,
+            badge: "Custom Special",
+            description: newCustomInvNotes.trim() || "Custom house special freshly prepared in our Chatham kitchen.",
+            prepTimeMins: prepNum,
+            cookTimeMins: cookNum,
+            ovenSlots: slotsNum,
+            station: cookNum > 0 ? "PIZZA" : "COLD",
+            isCustom: true,
+            inventoryUsage: usageMap
+          };
+          setMenuItems(prev => [newMenuEntry, ...prev]);
+        }
+
         setNewCustomInvName("");
+        setNewCustomInvNotes("");
+        setIsAddCustomModalOpen(false);
+      };
+
+      // Delete a custom inventory/menu item
+      const deleteCustomInventoryItem = (invId) => {
+        setInventory(prev => prev.filter(i => i.id !== invId));
+        setDraftInventory(prev => prev.filter(i => i.id !== invId));
+        setMenuItems(prev => prev.filter(i => i.id !== invId));
+        setCart(prev => prev.filter(i => i.id !== invId));
       };
 
       // Save all changes from Bulk Modal to live KDS Inventory
@@ -1145,7 +1256,7 @@
 
       const updateQuantity = (id, delta) => {
         if (delta > 0) {
-          const menuItem = BUCKYS_MENU.find(i => i.id === id);
+          const menuItem = menuItems.find(i => i.id === id);
           if (menuItem) {
             const avail = getMenuItemAvailability(menuItem);
             if (avail.maxCanAdd <= 0) return;
@@ -1216,14 +1327,33 @@
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: flow[o.status] || "PICKED_UP" } : o));
       };
 
-      const filteredMenu = BUCKYS_MENU.filter(item => item.category === selectedCategory);
+      const filteredMenu = menuItems.filter(item => item.category === selectedCategory);
 
       const filteredInventory = useMemo(() => {
-        if (kdsInventoryFilter === "DOUGH") return inventory.filter(i => i.category === "DOUGH");
-        if (kdsInventoryFilter === "PREP") return inventory.filter(i => i.category === "PREP");
-        if (kdsInventoryFilter === "ALERTS") return inventory.filter(i => i.eightySixed || i.stock <= i.lowThreshold);
-        return inventory;
-      }, [inventory, kdsInventoryFilter]);
+        let list = inventory;
+        if (kdsInventoryFilter === "DOUGH") {
+          list = list.filter(i => i.category === "DOUGH");
+        } else if (kdsInventoryFilter === "PREP") {
+          list = list.filter(i => i.category === "PREP");
+        } else if (kdsInventoryFilter === "MENU_ALL") {
+          list = list.filter(i => i.isMenuItem);
+        } else if (kdsInventoryFilter === "ALERTS") {
+          list = list.filter(i => i.eightySixed || i.stock <= i.lowThreshold);
+        } else if (kdsInventoryFilter !== "ALL") {
+          list = list.filter(i => i.category === kdsInventoryFilter);
+        }
+
+        if (kdsSearchQuery.trim()) {
+          const q = kdsSearchQuery.toLowerCase();
+          list = list.filter(
+            i =>
+              i.name.toLowerCase().includes(q) ||
+              i.category.toLowerCase().includes(q) ||
+              (i.notes && i.notes.toLowerCase().includes(q))
+          );
+        }
+        return list;
+      }, [inventory, kdsInventoryFilter, kdsSearchQuery]);
 
       return (
         <div className="min-h-screen flex flex-col bg-vintage-paper text-bucky-charcoal">
@@ -2006,73 +2136,113 @@
               {/* =============================================================== */}
               <section className="bg-white border-2 border-bucky-charcoal vintage-shadow">
                 {/* Inventory Header Bar */}
-                <div className="bg-bucky-parchment border-b-2 border-bucky-charcoal px-5 py-3.5 flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <span className="bg-bucky-red text-white font-condensed uppercase text-xs font-bold px-2.5 py-1 tracking-wider">
-                      📦 Live Pizza Inventory
-                    </span>
-                    <div>
-                      <h3 className="font-display font-black text-lg text-bucky-charcoal leading-none">
-                        Sourdough Dough Trays, Detroit Pans & Signature Prep Tracker
-                      </h3>
-                      <p className="text-xs text-stone-600 mt-0.5">
-                        Auto-deducts when Online or POS orders fire. 86’ing an item here immediately marks matching pies <strong>Sold Out</strong> online.
-                      </p>
+                <div className="bg-bucky-parchment border-b-2 border-bucky-charcoal px-5 py-3.5 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <span className="bg-bucky-red text-white font-condensed uppercase text-xs font-bold px-2.5 py-1 tracking-wider">
+                        📦 Complete Kitchen & Menu Inventory ({inventory.length} Items)
+                      </span>
+                      <div>
+                        <h3 className="font-display font-black text-lg text-bucky-charcoal leading-none">
+                          All Menu Items, Sourdough Dough Trays, Detroit Pans & Prep Tracker
+                        </h3>
+                        <p className="text-xs text-stone-600 mt-0.5">
+                          Every menu item & base ingredient is tracked here. Auto-deducts when orders fire; 86’ing marks items <strong>Sold Out</strong> online.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => setIsAddCustomModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
+                        title="Create a new custom menu item or kitchen inventory ingredient"
+                      >
+                        ➕ Add Custom Item
+                      </button>
+
+                      <button
+                        onClick={openBulkInventoryModal}
+                        className="px-3.5 py-1.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
+                        title="Open shift count sheet to manually set all inventory items at once"
+                      >
+                        ✏️ Set All Counts
+                      </button>
+
+                      <button
+                        onClick={resetAllInventoryToPar}
+                        className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                        title="Restock all menu items, dough trays and prep pans to full daily par"
+                      >
+                        ↻ Restock All to Par
+                      </button>
+
+                      <button
+                        onClick={() => setShowKdsInventoryPanel(prev => !prev)}
+                        className="px-2.5 py-1.5 bg-stone-200 hover:bg-stone-300 text-bucky-charcoal font-condensed uppercase text-xs font-bold border border-bucky-charcoal"
+                      >
+                        {showKdsInventoryPanel ? "Hide ▲" : "Expand ▼"}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Category Filter Tabs */}
-                    {[
-                      { id: "ALL", label: `All (${inventory.length})` },
-                      { id: "DOUGH", label: `Dough & Pans (${inventory.filter(i => i.category === "DOUGH").length})` },
-                      { id: "PREP", label: `Toppings & Prep (${inventory.filter(i => i.category === "PREP").length})` },
-                      { id: "ALERTS", label: `⚠️ Low / 86'd (${lowOr86Count})` }
-                    ].map(tab => (
-                      <button
-                        key={tab.id}
-                        onClick={() => {
-                          setKdsInventoryFilter(tab.id);
+                  {/* Filter Tabs & Search Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-stone-300">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { id: "ALL", label: `All (${inventory.length})` },
+                        { id: "MENU_ALL", label: `🍕 All Menu Items (${inventory.filter(i => i.isMenuItem).length})` },
+                        { id: "DOUGH", label: `🌾 Dough & Pans (${inventory.filter(i => i.category === "DOUGH").length})` },
+                        { id: "PREP", label: `🧀 Prep & Toppings (${inventory.filter(i => i.category === "PREP").length})` },
+                        { id: "ALERTS", label: `⚠️ Low / 86'd (${lowOr86Count})` },
+                        ...MENU_CATEGORIES.map(cat => ({
+                          id: cat,
+                          label: `${cat} (${inventory.filter(i => i.category === cat).length})`
+                        }))
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => {
+                            setKdsInventoryFilter(tab.id);
+                            setShowKdsInventoryPanel(true);
+                          }}
+                          className={`px-2.5 py-1 font-condensed uppercase tracking-wider text-[11px] border transition ${
+                            kdsInventoryFilter === tab.id && showKdsInventoryPanel
+                              ? "bg-bucky-charcoal text-white border-bucky-charcoal font-bold"
+                              : "bg-white text-bucky-charcoal border-bucky-charcoal hover:bg-bucky-cream"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="relative min-w-[220px] flex-1 max-w-xs">
+                      <input
+                        type="text"
+                        placeholder="🔍 Search menu or kitchen stock..."
+                        value={kdsSearchQuery}
+                        onChange={e => {
+                          setKdsSearchQuery(e.target.value);
                           setShowKdsInventoryPanel(true);
                         }}
-                        className={`px-3 py-1.5 font-condensed uppercase tracking-wider text-xs border transition ${
-                          kdsInventoryFilter === tab.id && showKdsInventoryPanel
-                            ? "bg-bucky-charcoal text-white border-bucky-charcoal font-bold"
-                            : "bg-white text-bucky-charcoal border-bucky-charcoal hover:bg-bucky-cream"
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-
-                    <button
-                      onClick={openBulkInventoryModal}
-                      className="px-3.5 py-1.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
-                      title="Open shift count sheet to manually set all inventory items at once"
-                    >
-                      ✏️ Set All Counts
-                    </button>
-
-                    <button
-                      onClick={resetAllInventoryToPar}
-                      className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
-                      title="Restock all dough trays and prep pans to full daily par"
-                    >
-                      ↻ Restock All to Par
-                    </button>
-
-                    <button
-                      onClick={() => setShowKdsInventoryPanel(prev => !prev)}
-                      className="px-2.5 py-1.5 bg-stone-200 hover:bg-stone-300 text-bucky-charcoal font-condensed uppercase text-xs font-bold border border-bucky-charcoal"
-                    >
-                      {showKdsInventoryPanel ? "Hide ▲" : "Expand ▼"}
-                    </button>
+                        className="w-full px-3 py-1 bg-white border-2 border-bucky-charcoal text-xs text-bucky-charcoal font-medium"
+                      />
+                      {kdsSearchQuery && (
+                        <button
+                          onClick={() => setKdsSearchQuery("")}
+                          className="absolute right-2 top-1 text-xs text-stone-500 hover:text-bucky-charcoal font-bold"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Inventory Grid */}
                 {showKdsInventoryPanel && (
-                  <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-h-[640px] overflow-y-auto">
                     {filteredInventory.map(inv => {
                       const pct = Math.min(100, Math.round((inv.stock / Math.max(1, inv.dailyPar)) * 100));
                       const is86 = inv.eightySixed || inv.stock === 0;
@@ -2093,32 +2263,56 @@
                           <div>
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <span className={`font-condensed uppercase text-[10px] tracking-widest px-1.5 py-0.5 font-bold ${
-                                  inv.category === "DOUGH"
-                                    ? "bg-bucky-charcoal text-white"
-                                    : "bg-stone-200 text-bucky-charcoal border border-stone-400"
-                                }`}>
-                                  {inv.category === "DOUGH" ? "🌾 DOUGH / PAN" : "🧀 PREP / TOPPING"}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className={`font-condensed uppercase text-[10px] tracking-widest px-1.5 py-0.5 font-bold ${
+                                    inv.category === "DOUGH"
+                                      ? "bg-bucky-charcoal text-white"
+                                      : inv.category === "PREP"
+                                      ? "bg-stone-200 text-bucky-charcoal border border-stone-400"
+                                      : "bg-bucky-red/15 text-bucky-red border border-bucky-red/40"
+                                  }`}>
+                                    {inv.category === "DOUGH"
+                                      ? "🌾 DOUGH / PAN"
+                                      : inv.category === "PREP"
+                                      ? "🧀 PREP / TOPPING"
+                                      : `🍕 ${inv.category}`}
+                                  </span>
+                                  {inv.isCustom && (
+                                    <span className="bg-purple-900 text-white font-condensed uppercase text-[9px] px-1.5 py-0.5 font-bold">
+                                      ★ CUSTOM
+                                    </span>
+                                  )}
+                                </div>
                                 <h4 className="font-display font-bold text-sm text-bucky-charcoal mt-1 leading-snug">
                                   {inv.name}
                                 </h4>
                               </div>
 
-                              {/* Status Pill */}
-                              {is86 ? (
-                                <span className="bg-bucky-red text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider shrink-0">
-                                  ⛔ 86'D / OUT
-                                </span>
-                              ) : isLow ? (
-                                <span className="bg-amber-400 text-bucky-charcoal border border-bucky-charcoal font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider shrink-0">
-                                  ⚠️ LOW STOCK
-                                </span>
-                              ) : (
-                                <span className="bg-emerald-100 text-emerald-900 border border-emerald-700 font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider shrink-0">
-                                  ✓ GOOD
-                                </span>
-                              )}
+                              {/* Status Pill + Optional Delete for Custom Items */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                {is86 ? (
+                                  <span className="bg-bucky-red text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
+                                    ⛔ 86'D / OUT
+                                  </span>
+                                ) : isLow ? (
+                                  <span className="bg-amber-400 text-bucky-charcoal border border-bucky-charcoal font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
+                                    ⚠️ LOW STOCK
+                                  </span>
+                                ) : (
+                                  <span className="bg-emerald-100 text-emerald-900 border border-emerald-700 font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
+                                    ✓ GOOD
+                                  </span>
+                                )}
+                                {inv.isCustom && (
+                                  <button
+                                    onClick={() => deleteCustomInventoryItem(inv.id)}
+                                    className="px-1.5 py-0.5 bg-stone-200 hover:bg-bucky-red hover:text-white text-stone-700 text-[10px] font-bold border border-stone-400"
+                                    title="Delete custom item"
+                                  >
+                                    🗑️
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             <p className="text-[11px] text-stone-600 mt-1 leading-snug">
@@ -2745,18 +2939,18 @@
                     </table>
                   </div>
 
-                  {/* Add Custom Inventory Item Form */}
+                  {/* Add Custom Inventory Item Form inside Bulk Modal */}
                   <form
                     onSubmit={handleAddCustomInventoryItem}
                     className="bg-white border-2 border-bucky-charcoal p-4 flex flex-wrap items-end gap-3 text-xs"
                   >
                     <div className="flex-1 min-w-[180px]">
                       <label className="block font-condensed uppercase text-[11px] font-bold text-stone-600 mb-1">
-                        + Add Custom Inventory Item
+                        + Quick-Add Custom Item
                       </label>
                       <input
                         type="text"
-                        placeholder="e.g. Pistachio Pesto or Hot Honey Jugs"
+                        placeholder="e.g. Round: Fig & Prosciutto or Hot Honey Jugs"
                         value={newCustomInvName}
                         onChange={e => setNewCustomInvName(e.target.value)}
                         className="w-full px-3 py-1.5 bg-bucky-cream border border-bucky-charcoal font-medium"
@@ -2771,8 +2965,15 @@
                         onChange={e => setNewCustomInvCategory(e.target.value)}
                         className="px-2.5 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold"
                       >
-                        <option value="DOUGH">DOUGH / PAN</option>
-                        <option value="PREP">PREP / TOPPING</option>
+                        <optgroup label="Menu Categories (Storefront + KDS)">
+                          {MENU_CATEGORIES.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Back-of-House Kitchen Stock">
+                          <option value="DOUGH">DOUGH / PAN</option>
+                          <option value="PREP">PREP / TOPPING</option>
+                        </optgroup>
                       </select>
                     </div>
                     <div>
@@ -2814,7 +3015,7 @@
                       type="submit"
                       className="px-4 py-1.5 bg-bucky-charcoal hover:bg-bucky-red text-white font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
                     >
-                      + Add Row
+                      + Add Item
                     </button>
                   </form>
                 </div>
@@ -2840,6 +3041,275 @@
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* DEDICATED "ADD CUSTOM INVENTORY / MENU ITEM" MODAL                */}
+          {/* ================================================================= */}
+          {isAddCustomModalOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <form
+                onSubmit={handleAddCustomInventoryItem}
+                className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-xl w-full p-6 space-y-4 vintage-shadow max-h-[90vh] overflow-y-auto"
+              >
+                <div className="flex items-start justify-between border-b-2 border-bucky-charcoal pb-3">
+                  <div>
+                    <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
+                      Bucky’s Kitchen & Menu Builder
+                    </span>
+                    <h3 className="font-display font-black text-2xl">
+                      ➕ Add Custom Inventory Item
+                    </h3>
+                    <p className="text-xs text-stone-600 mt-0.5">
+                      Add a new daily special pie, starter, drink, or back-of-house kitchen prep ingredient.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCustomModalOpen(false)}
+                    className="text-stone-500 hover:text-bucky-charcoal font-bold text-lg"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-condensed uppercase tracking-wider text-stone-700 mb-1 font-bold">
+                        Item Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Round: Fig, Prosciutto & Hot Honey"
+                        value={newCustomInvName}
+                        onChange={e => setNewCustomInvName(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-condensed uppercase tracking-wider text-stone-700 mb-1 font-bold">
+                        Category / Station *
+                      </label>
+                      <select
+                        value={newCustomInvCategory}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setNewCustomInvCategory(val);
+                          if (val === "DOUGH" || val === "PREP") {
+                            setNewCustomInvAddToMenu(false);
+                            setNewCustomInvUnit(val === "DOUGH" ? "balls" : "portions");
+                          } else {
+                            setNewCustomInvAddToMenu(true);
+                            setNewCustomInvUnit(val.includes("Round") || val.includes("Detroit") || val === "Specials" ? "pies" : "orders");
+                          }
+                        }}
+                        className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal font-bold"
+                      >
+                        <optgroup label="🍕 Menu Categories (Storefront, POS & KDS)">
+                          {MENU_CATEGORIES.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="🌾 Back-of-House Kitchen Stock Only">
+                          <option value="DOUGH">DOUGH / PAN</option>
+                          <option value="PREP">PREP / TOPPING</option>
+                        </optgroup>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Stock, Par, Alert, Tray & Unit */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 bg-bucky-parchment p-3 border-2 border-bucky-charcoal">
+                    <div>
+                      <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                        Opening Stock
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="999"
+                        value={newCustomInvStock}
+                        onChange={e => setNewCustomInvStock(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-white border border-bucky-charcoal font-display font-black text-sm text-center"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                        Daily Par
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        value={newCustomInvPar}
+                        onChange={e => setNewCustomInvPar(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-white border border-bucky-charcoal font-bold text-center"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                        Low Alert ≤
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={newCustomInvLow}
+                        onChange={e => setNewCustomInvLow(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-white border border-bucky-charcoal font-bold text-center"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                        Tray Size (+)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={newCustomInvTray}
+                        onChange={e => setNewCustomInvTray(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-white border border-bucky-charcoal font-bold text-center"
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                        Unit Label
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="pies / portions"
+                        value={newCustomInvUnit}
+                        onChange={e => setNewCustomInvUnit(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-white border border-bucky-charcoal font-medium text-center"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Optional Menu Publishing Controls (Shown when a Menu Category is chosen) */}
+                  {newCustomInvCategory !== "DOUGH" && newCustomInvCategory !== "PREP" && (
+                    <div className="bg-white border-2 border-bucky-charcoal p-3.5 space-y-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newCustomInvAddToMenu}
+                          onChange={e => setNewCustomInvAddToMenu(e.target.checked)}
+                          className="accent-bucky-red w-4 h-4"
+                        />
+                        <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                          Publish to Customer Online Storefront & Counter POS Menu
+                        </span>
+                      </label>
+
+                      {newCustomInvAddToMenu && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                          <div>
+                            <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                              Menu Price ($)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.50"
+                              min="0"
+                              value={newCustomInvPrice}
+                              onChange={e => setNewCustomInvPrice(e.target.value)}
+                              className="w-full px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold text-center"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                              Prep Time (m)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="30"
+                              value={newCustomInvPrepMins}
+                              onChange={e => setNewCustomInvPrepMins(e.target.value)}
+                              className="w-full px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold text-center"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                              Bake Time (m)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="45"
+                              value={newCustomInvCookMins}
+                              onChange={e => setNewCustomInvCookMins(e.target.value)}
+                              className="w-full px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold text-center"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                              Oven Deck Slots
+                            </label>
+                            <select
+                              value={newCustomInvOvenSlots}
+                              onChange={e => setNewCustomInvOvenSlots(e.target.value)}
+                              className="w-full px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold"
+                            >
+                              <option value="1.0">1.0 (16" Round)</option>
+                              <option value="0.75">0.75 (8x10 Det)</option>
+                              <option value="0.25">0.25 (Hot Side)</option>
+                              <option value="0">0 (Cold / Drink)</option>
+                            </select>
+                          </div>
+                          <div className="col-span-2 sm:col-span-4">
+                            <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
+                              Also Deduct Base Shared Dough?
+                            </label>
+                            <select
+                              value={newCustomInvDoughId}
+                              onChange={e => setNewCustomInvDoughId(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-bucky-cream border border-bucky-charcoal font-semibold"
+                            >
+                              <option value="dough-round-16">Yes — Deduct 1x 16" Sourdough Dough Ball</option>
+                              <option value="dough-detroit-8x10">Yes — Deduct 1x 8x10 Detroit Pan Dough</option>
+                              <option value="dough-grandma">Yes — Deduct 1x Grandma Square Pan Dough</option>
+                              <option value="NONE">No — Track only this item's individual stock count</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block font-condensed uppercase tracking-wider text-stone-700 mb-1 font-bold">
+                      Description / Kitchen Prep Notes
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Sourdough crust, black mission figs, prosciutto di Parma, whipped ricotta, hot honey."
+                      value={newCustomInvNotes}
+                      onChange={e => setNewCustomInvNotes(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-3 border-t-2 border-bucky-charcoal">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCustomModalOpen(false)}
+                    className="px-4 py-2 bg-white hover:bg-stone-200 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-bold border-2 border-bucky-charcoal"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-widest text-sm font-bold border-2 border-bucky-charcoal vintage-shadow-sm"
+                  >
+                    ✓ Add Custom Item to Inventory
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>
