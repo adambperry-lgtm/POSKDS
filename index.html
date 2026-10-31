@@ -794,9 +794,59 @@
     }
 
     // ============================================================================
-    // 3. INITIAL SEED ORDERS
+    // 3. INITIAL SEED ORDERS & HISTORICAL NIGHTLY Z-REPORT ARCHIVE
     // ============================================================================
     const INITIAL_ORDERS = [
+      {
+        id: "ORD-1039",
+        customerName: "Chris M.",
+        customerPhone: "(973) 555-0114",
+        source: "ONLINE",
+        status: "PICKED_UP",
+        createdAt: new Date(Date.now() - 52 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        promisedTime: new Date(Date.now() - 28 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        completedAt: new Date(Date.now() - 26 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        estimatedMins: 24,
+        paid: true,
+        paymentMethod: "Stripe •••• 4242",
+        stripePaymentIntentId: "pi_3Q8K9L2M1N0P",
+        subtotal: 77.00,
+        taxAmount: 5.10,
+        tipAmount: 13.86,
+        tipLabel: "18%",
+        totalAmount: 95.96,
+        items: [
+          { ...BUCKYS_MENU.find(i => i.id === "spec-round-buffalo"), quantity: 1 },
+          { ...BUCKYS_MENU.find(i => i.id === "det-hothoney"), quantity: 1 },
+          { ...BUCKYS_MENU.find(i => i.id === "start-knots"), quantity: 1 },
+          { ...BUCKYS_MENU.find(i => i.id === "des-cannoli"), quantity: 2 },
+          { ...BUCKYS_MENU.find(i => i.id === "bev-spindrift"), quantity: 1 }
+        ]
+      },
+      {
+        id: "ORD-1040",
+        customerName: "Sarah & Tom K.",
+        customerPhone: "(908) 555-0377",
+        source: "POS",
+        status: "PICKED_UP",
+        createdAt: new Date(Date.now() - 38 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        promisedTime: new Date(Date.now() - 16 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        completedAt: new Date(Date.now() - 15 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        estimatedMins: 22,
+        paid: true,
+        paymentMethod: "Toast Tap / Card",
+        stripePaymentIntentId: "pi_3Q8M4P9R2T6W",
+        subtotal: 66.00,
+        taxAmount: 4.37,
+        tipAmount: 13.20,
+        tipLabel: "20%",
+        totalAmount: 83.57,
+        items: [
+          { ...BUCKYS_MENU.find(i => i.id === "ny-pepperoni"), quantity: 1 },
+          { ...BUCKYS_MENU.find(i => i.id === "ny-margherita"), quantity: 1 },
+          { ...BUCKYS_MENU.find(i => i.id === "des-olive-oil-cake"), quantity: 1 }
+        ]
+      },
       {
         id: "ORD-1041",
         customerName: "Mia S.",
@@ -807,7 +857,12 @@
         promisedTime: new Date(Date.now() + 6 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         estimatedMins: 20,
         paid: true,
-        paymentMethod: "Toast Online •••• 4242",
+        paymentMethod: "Stripe •••• 4242",
+        subtotal: 103.00,
+        taxAmount: 6.82,
+        tipAmount: 18.54,
+        tipLabel: "18%",
+        totalAmount: 128.36,
         items: [
           { ...BUCKYS_MENU.find(i => i.id === "ny-hothoney-pep"), quantity: 2 },
           { ...BUCKYS_MENU.find(i => i.id === "det-cacio"), quantity: 1 },
@@ -824,7 +879,12 @@
         promisedTime: new Date(Date.now() + 18 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         estimatedMins: 23,
         paid: true,
-        paymentMethod: "Apple Pay",
+        paymentMethod: "Stripe Apple Pay",
+        subtotal: 78.00,
+        taxAmount: 5.17,
+        tipAmount: 11.70,
+        tipLabel: "15%",
+        totalAmount: 94.87,
         items: [
           { ...BUCKYS_MENU.find(i => i.id === "ny-white-mushroom"), quantity: 1 },
           { ...BUCKYS_MENU.find(i => i.id === "ny-sausage-onion-chili"), quantity: 1 },
@@ -841,10 +901,76 @@
         promisedTime: new Date(Date.now() + 26 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         estimatedMins: 27,
         paid: true,
-        paymentMethod: "Toast Online •••• 8819",
+        paymentMethod: "Stripe •••• 8819",
+        subtotal: 60.00,
+        taxAmount: 3.98,
+        tipAmount: 10.80,
+        tipLabel: "18%",
+        totalAmount: 74.78,
         items: [
           { ...BUCKYS_MENU.find(i => i.id === "grandma-pie"), quantity: 1 },
           { ...BUCKYS_MENU.find(i => i.id === "spec-round-pesto"), quantity: 1 }
+        ]
+      }
+    ];
+
+    const INITIAL_NIGHTLY_ARCHIVE = [
+      {
+        id: "Z-2026-1030",
+        dateLabel: "Friday, Oct 30, 2026 — Dinner Rush",
+        closedAt: "8:18 PM",
+        managerNote: "Sold out of 16\" sourdough rounds at 7:45 PM. Strong Detroit pan & Hot Honey Pepperoni night.",
+        completedOrdersCount: 84,
+        totalOrdersCount: 84,
+        totalItemsSold: 236,
+        netSales: 4680.00,
+        taxCollected: 310.05,
+        tipsCollected: 842.40,
+        grossRevenue: 5832.45,
+        onlineRevenue: 4390.20,
+        posRevenue: 1442.25,
+        utilizedMenuItems: [
+          { id: "ny-hothoney-pep", name: "16\" Hot Honey Pepperoni", category: "16\" Sourdough Round Pies", qty: 28, revenue: 896.00 },
+          { id: "spec-round-buffalo", name: "Round: Crispy Chicken Bacon Ranch / Buffalo", category: "Specials", qty: 19, revenue: 608.00 },
+          { id: "det-hothoney", name: "8x10 Detroit Hot Honey Pepperoni", category: "8x10 Detroit Pan Pizzas", qty: 22, revenue: 528.00 },
+          { id: "ny-pepperoni", name: "16\" Ezzo Cup & Char Pepperoni", category: "16\" Sourdough Round Pies", qty: 18, revenue: 522.00 },
+          { id: "grandma-pie", name: "16x16 Crispy Thin Grandma Pie", category: "Grandma & Calzones", qty: 14, revenue: 392.00 },
+          { id: "salad-italian", name: "Bucky’s Chopped Italian Salad", category: "Starters & Salads", qty: 24, revenue: 456.00 }
+        ],
+        utilizedIngredients: [
+          { id: "dough-round-16", name: "16\" Sourdough Dough Balls", category: "DOUGH", unit: "balls", qtyUsed: 95 },
+          { id: "dough-detroit-8x10", name: "8x10 Detroit Blue Steel Pans", category: "DOUGH", unit: "pans", qtyUsed: 40 },
+          { id: "dough-grandma", name: "16x16 Grandma Square Pans", category: "DOUGH", unit: "pans", qtyUsed: 15 },
+          { id: "prep-mozz-fresh", name: "Fresh Mozzarella & Scamorza", category: "PREP", unit: "portions", qtyUsed: 148 },
+          { id: "prep-ezzo-pep", name: "Ezzo Cup & Char Pepperoni", category: "PREP", unit: "portions", qtyUsed: 72 },
+          { id: "prep-hot-honey", name: "Mike's Hot Honey & Whipped Ricotta", category: "PREP", unit: "portions", qtyUsed: 54 }
+        ]
+      },
+      {
+        id: "Z-2026-1029",
+        dateLabel: "Thursday, Oct 29, 2026 — Evening Service",
+        closedAt: "8:09 PM",
+        managerNote: "Steady online pickup flow. 12 cannolis left over at close.",
+        completedOrdersCount: 62,
+        totalOrdersCount: 62,
+        totalItemsSold: 171,
+        netSales: 3390.00,
+        taxCollected: 224.59,
+        tipsCollected: 598.10,
+        grossRevenue: 4212.69,
+        onlineRevenue: 3180.50,
+        posRevenue: 1032.19,
+        utilizedMenuItems: [
+          { id: "ny-hothoney-pep", name: "16\" Hot Honey Pepperoni", category: "16\" Sourdough Round Pies", qty: 21, revenue: 672.00 },
+          { id: "ny-vodka", name: "16\" Sourdough Vodka Pie", category: "16\" Sourdough Round Pies", qty: 16, revenue: 416.00 },
+          { id: "det-cacio", name: "8x10 Detroit Cacio e Pepe", category: "8x10 Detroit Pan Pizzas", qty: 15, revenue: 345.00 },
+          { id: "start-meatballs", name: "Nonna’s Sunday Meatballs (3pc)", category: "Starters & Salads", qty: 19, revenue: 266.00 }
+        ],
+        utilizedIngredients: [
+          { id: "dough-round-16", name: "16\" Sourdough Dough Balls", category: "DOUGH", unit: "balls", qtyUsed: 71 },
+          { id: "dough-detroit-8x10", name: "8x10 Detroit Blue Steel Pans", category: "DOUGH", unit: "pans", qtyUsed: 29 },
+          { id: "prep-mozz-fresh", name: "Fresh Mozzarella & Scamorza", category: "PREP", unit: "portions", qtyUsed: 104 },
+          { id: "prep-ezzo-pep", name: "Ezzo Cup & Char Pepperoni", category: "PREP", unit: "portions", qtyUsed: 46 }
         ]
       }
     ];
@@ -918,11 +1044,28 @@
         if (initialUrlMode === "pos") return "POS";
         if (initialUrlMode === "kds") return "KDS";
         if (initialUrlMode === "menu") return "MENU_EDITOR";
+        if (initialUrlMode === "accounting") return "ACCOUNTING";
         return "ONLINE";
-      }); // "ONLINE" | "POS" | "KDS" | "MENU_EDITOR"
+      }); // "ONLINE" | "POS" | "KDS" | "MENU_EDITOR" | "ACCOUNTING"
 
       const [menuEditorCategoryFilter, setMenuEditorCategoryFilter] = useState("ALL");
       const [menuEditorSearch, setMenuEditorSearch] = useState("");
+
+      // Accounting, Product Utilization & Nightly Z-Report Archive State
+      const [nightlyArchive, setNightlyArchive] = useState(
+        () => loadPersistedSharedState()?.nightlyArchive || INITIAL_NIGHTLY_ARCHIVE
+      );
+      const [accountingFilterMode, setAccountingFilterMode] = useState("COMPLETED_ONLY"); // "COMPLETED_ONLY" | "ALL_PAID"
+      const [selectedArchiveReportId, setSelectedArchiveReportId] = useState(
+        () => (loadPersistedSharedState()?.nightlyArchive || INITIAL_NIGHTLY_ARCHIVE)[0]?.id || ""
+      );
+      const [closeoutDateLabel, setCloseoutDateLabel] = useState(() => {
+        const d = new Date();
+        return `${d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" })} — Evening Shift`;
+      });
+      const [closeoutManagerNote, setCloseoutManagerNote] = useState("");
+      const [clearPickedUpOnCloseout, setClearPickedUpOnCloseout] = useState(false);
+      const [closeoutSuccessBanner, setCloseoutSuccessBanner] = useState("");
 
       const [onlineSubPage, setOnlineSubPage] = useState("MENU"); // "MENU" | "GUIDELINES" | "STORY" | "CATERING"
       const [selectedCategory, setSelectedCategory] = useState("Specials");
@@ -1092,6 +1235,9 @@
         if (payload.kitchenConfig) {
           setKitchenConfig(payload.kitchenConfig);
         }
+        if (Array.isArray(payload.nightlyArchive)) {
+          setNightlyArchive(payload.nightlyArchive);
+        }
 
         setLastSyncTimestamp(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
         setSyncPulseActive(true);
@@ -1155,7 +1301,8 @@
           orders,
           inventory,
           menuItems,
-          kitchenConfig
+          kitchenConfig,
+          nightlyArchive
         };
 
         try {
@@ -1176,7 +1323,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         }).catch(() => {});
-      }, [orders, inventory, menuItems, kitchenConfig]);
+      }, [orders, inventory, menuItems, kitchenConfig, nightlyArchive]);
 
       // Customer View Lock & Staff PIN Unlock Handlers
       const lockToCustomerMode = () => {
@@ -2138,7 +2285,7 @@
         }, 650);
       };
 
-      // Advance KDS Order Status
+      // Advance KDS Order Status (Stamps completedAt when handed off to guest as PICKED_UP)
       const advanceOrderStatus = (orderId) => {
         const flow = {
           QUEUED: "MAKE_LINE",
@@ -2146,7 +2293,213 @@
           IN_OVEN: "READY",
           READY: "PICKED_UP"
         };
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: flow[o.status] || "PICKED_UP" } : o));
+        const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setOrders(prev =>
+          prev.map(o => {
+            if (o.id !== orderId) return o;
+            const nextStatus = flow[o.status] || "PICKED_UP";
+            return {
+              ...o,
+              status: nextStatus,
+              completedAt: nextStatus === "PICKED_UP" ? (o.completedAt || nowStr) : o.completedAt
+            };
+          })
+        );
+      };
+
+      // ========================================================================
+      // ACCOUNTING, PRODUCT UTILIZATION & NIGHTLY Z-REPORT ARCHIVE ENGINE
+      // ========================================================================
+      const computeOrderFinancials = (order) => {
+        const calcSub = (order.items || []).reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
+        const subtotal = typeof order.subtotal === "number" ? order.subtotal : Number(calcSub.toFixed(2));
+        const taxAmount = typeof order.taxAmount === "number" ? order.taxAmount : Number((subtotal * 0.06625).toFixed(2));
+        const tipAmount = typeof order.tipAmount === "number" ? order.tipAmount : Number((subtotal * 0.18).toFixed(2));
+        const totalAmount = typeof order.totalAmount === "number"
+          ? order.totalAmount
+          : Number((subtotal + taxAmount + tipAmount).toFixed(2));
+        const itemCount = (order.items || []).reduce((s, i) => s + (Number(i.quantity) || 1), 0);
+        return { subtotal, taxAmount, tipAmount, totalAmount, itemCount };
+      };
+
+      const buildAccountingSummaryForOrders = (targetOrders) => {
+        let netSales = 0;
+        let taxCollected = 0;
+        let tipsCollected = 0;
+        let grossRevenue = 0;
+        let onlineRevenue = 0;
+        let posRevenue = 0;
+        let totalItemsSold = 0;
+
+        const menuUsageMap = {};
+        const ingredientUsageMap = {};
+
+        targetOrders.forEach(order => {
+          const fin = computeOrderFinancials(order);
+          netSales += fin.subtotal;
+          taxCollected += fin.taxAmount;
+          tipsCollected += fin.tipAmount;
+          grossRevenue += fin.totalAmount;
+          totalItemsSold += fin.itemCount;
+
+          if (order.source === "ONLINE") {
+            onlineRevenue += fin.totalAmount;
+          } else {
+            posRevenue += fin.totalAmount;
+          }
+
+          (order.items || []).forEach(item => {
+            const qty = Number(item.quantity) || 1;
+            const rev = (Number(item.price) || 0) * qty;
+            if (!menuUsageMap[item.id]) {
+              menuUsageMap[item.id] = {
+                id: item.id,
+                name: item.name,
+                category: item.category || "Menu",
+                qty: 0,
+                revenue: 0
+              };
+            }
+            menuUsageMap[item.id].qty += qty;
+            menuUsageMap[item.id].revenue += rev;
+
+            const invMap = item.inventoryUsage || {};
+            Object.entries(invMap).forEach(([invId, reqUnits]) => {
+              // Track base dough and prep ingredients (skip duplicate self-id menu entries)
+              if (invId === item.id) return;
+              const invObj = inventory.find(x => x.id === invId);
+              const usedCount = (Number(reqUnits) || 0) * qty;
+              if (usedCount <= 0) return;
+              if (!ingredientUsageMap[invId]) {
+                ingredientUsageMap[invId] = {
+                  id: invId,
+                  name: invObj ? invObj.name : invId,
+                  category: invObj ? invObj.category : "PREP",
+                  unit: invObj ? invObj.unit : "units",
+                  qtyUsed: 0
+                };
+              }
+              ingredientUsageMap[invId].qtyUsed += usedCount;
+            });
+          });
+        });
+
+        const utilizedMenuItems = Object.values(menuUsageMap).sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
+        const utilizedIngredients = Object.values(ingredientUsageMap).sort((a, b) => b.qtyUsed - a.qtyUsed);
+
+        return {
+          orderCount: targetOrders.length,
+          totalItemsSold,
+          netSales: Number(netSales.toFixed(2)),
+          taxCollected: Number(taxCollected.toFixed(2)),
+          tipsCollected: Number(tipsCollected.toFixed(2)),
+          grossRevenue: Number(grossRevenue.toFixed(2)),
+          onlineRevenue: Number(onlineRevenue.toFixed(2)),
+          posRevenue: Number(posRevenue.toFixed(2)),
+          avgOrderValue: targetOrders.length > 0 ? Number((grossRevenue / targetOrders.length).toFixed(2)) : 0,
+          utilizedMenuItems,
+          utilizedIngredients
+        };
+      };
+
+      const completedOrdersList = useMemo(
+        () => orders.filter(o => o.status === "PICKED_UP"),
+        [orders]
+      );
+
+      const accountingOrdersToAnalyze = useMemo(
+        () => (accountingFilterMode === "COMPLETED_ONLY" ? completedOrdersList : orders),
+        [accountingFilterMode, completedOrdersList, orders]
+      );
+
+      const liveAccountingSummary = useMemo(
+        () => buildAccountingSummaryForOrders(accountingOrdersToAnalyze),
+        [accountingOrdersToAnalyze, inventory]
+      );
+
+      const closeOutNightAndArchiveSummary = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        const targetOrdersForNight = orders.length > 0 ? orders : [];
+        const completedCount = orders.filter(o => o.status === "PICKED_UP").length;
+        const summary = buildAccountingSummaryForOrders(
+          accountingFilterMode === "COMPLETED_ONLY" && completedCount > 0
+            ? orders.filter(o => o.status === "PICKED_UP")
+            : targetOrdersForNight
+        );
+
+        const archiveId = `Z-${new Date().toISOString().slice(0, 10)}-${Math.floor(100 + Math.random() * 900)}`;
+        const newReport = {
+          id: archiveId,
+          dateLabel: closeoutDateLabel.trim() || `Shift Closeout (${new Date().toLocaleDateString()})`,
+          closedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          managerNote:
+            closeoutManagerNote.trim() ||
+            `End-of-night Z-Report generated. ${summary.orderCount} orders (${summary.totalItemsSold} items) totaled $${summary.grossRevenue.toFixed(2)}.`,
+          completedOrdersCount: completedCount,
+          totalOrdersCount: orders.length,
+          totalItemsSold: summary.totalItemsSold,
+          netSales: summary.netSales,
+          taxCollected: summary.taxCollected,
+          tipsCollected: summary.tipsCollected,
+          grossRevenue: summary.grossRevenue,
+          onlineRevenue: summary.onlineRevenue,
+          posRevenue: summary.posRevenue,
+          utilizedMenuItems: summary.utilizedMenuItems,
+          utilizedIngredients: summary.utilizedIngredients
+        };
+
+        setNightlyArchive(prev => [newReport, ...prev]);
+        setSelectedArchiveReportId(archiveId);
+        setCloseoutManagerNote("");
+
+        if (clearPickedUpOnCloseout) {
+          setOrders(prev => prev.filter(o => o.status !== "PICKED_UP"));
+        }
+
+        setCloseoutSuccessBanner(
+          `Saved End-of-Night Summary "${newReport.dateLabel}" (${newReport.id}) — Gross Revenue: $${newReport.grossRevenue.toFixed(2)}`
+        );
+        setTimeout(() => setCloseoutSuccessBanner(""), 8000);
+      };
+
+      const exportAccountingCsv = (reportObj) => {
+        const lines = [
+          ["Bucky's Real Good Pizza - 465 Main St, Chatham NJ - Accounting & Product Utilization Report"],
+          ["Report Label", reportObj.dateLabel || "Live Shift"],
+          ["Generated At", reportObj.closedAt || new Date().toLocaleTimeString()],
+          ["Orders Count", reportObj.completedOrdersCount ?? reportObj.orderCount ?? 0],
+          ["Total Items Sold", reportObj.totalItemsSold ?? 0],
+          ["Net Sales ($)", (reportObj.netSales || 0).toFixed(2)],
+          ["NJ Sales Tax 6.625% ($)", (reportObj.taxCollected || 0).toFixed(2)],
+          ["Tips Collected ($)", (reportObj.tipsCollected || 0).toFixed(2)],
+          ["Gross Revenue ($)", (reportObj.grossRevenue || 0).toFixed(2)],
+          ["Online Storefront Revenue ($)", (reportObj.onlineRevenue || 0).toFixed(2)],
+          ["Counter POS Revenue ($)", (reportObj.posRevenue || 0).toFixed(2)],
+          [],
+          ["UTILIZED MENU PRODUCTS", "Category", "Qty Sold", "Revenue ($)"],
+          ...(reportObj.utilizedMenuItems || []).map(m => [
+            `"${m.name.replace(/"/g, '""')}"`,
+            `"${m.category}"`,
+            m.qty,
+            m.revenue.toFixed(2)
+          ]),
+          [],
+          ["UTILIZED KITCHEN DOUGH & PREP INGREDIENTS", "Category", "Qty Used", "Unit"],
+          ...(reportObj.utilizedIngredients || []).map(ing => [
+            `"${ing.name.replace(/"/g, '""')}"`,
+            ing.category,
+            ing.qtyUsed,
+            ing.unit
+          ])
+        ];
+        const csvContent = "data:text/csv;charset=utf-8," + lines.map(r => r.join(",")).join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `buckys-accounting-${reportObj.id || "live-shift"}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       };
 
       const filteredMenu = menuItems.filter(item => item.category === selectedCategory);
@@ -2317,6 +2670,19 @@
                     <span>📋 Menu Editor</span>
                     <span className="px-1.5 py-0.2 bg-stone-700 text-stone-200 font-bold rounded-full text-[10px]">
                       {menuItems.length}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setActiveView("ACCOUNTING")}
+                    className={`px-3 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1.5 ${
+                      activeView === "ACCOUNTING"
+                        ? "bg-bucky-red text-white shadow"
+                        : "text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    <span>💰 Accounting</span>
+                    <span className="px-1.5 py-0.2 bg-emerald-800 text-emerald-100 font-bold rounded-full text-[10px]">
+                      {completedOrdersList.length}
                     </span>
                   </button>
                   <button
@@ -4265,6 +4631,658 @@
           )}
 
           {/* ================================================================= */}
+          {/* VIEW 5: ACCOUNTING, UTILIZED PRODUCT & NIGHTLY ARCHIVE PAGE       */}
+          {/* ================================================================= */}
+          {activeView === "ACCOUNTING" && (
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+              {/* Top Accounting Header & Filter Bar */}
+              <div className="bg-bucky-charcoal text-white p-5 border-2 border-bucky-charcoal vintage-shadow-red flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="bg-bucky-red text-white font-condensed uppercase text-xs px-2.5 py-0.5 tracking-widest font-bold">
+                      465 Main St • Chatham Accounting & Z-Report Ledger
+                    </span>
+                    <span className="text-xs text-emerald-300 font-condensed uppercase tracking-wider">
+                      ⚡ Live Order Revenue, Utilized Product & Nightly Archive
+                    </span>
+                  </div>
+                  <h2 className="font-display font-black text-2xl sm:text-3xl mt-1">
+                    💰 Shift Accounting, Product Usage & Nightly Archive
+                  </h2>
+                  <p className="text-xs text-stone-300 mt-0.5">
+                    Tracks completed orders, net sales, NJ 6.625% sales tax, crew tips, utilized menu items & dough/prep stock, and builds end-of-night Z-Reports.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Toggle Completed Orders vs All Paid Orders */}
+                  <div className="inline-flex bg-stone-900 p-1 border border-stone-700">
+                    <button
+                      type="button"
+                      onClick={() => setAccountingFilterMode("COMPLETED_ONLY")}
+                      className={`px-3 py-1.5 font-condensed uppercase tracking-wider text-xs transition ${
+                        accountingFilterMode === "COMPLETED_ONLY"
+                          ? "bg-emerald-700 text-white font-bold"
+                          : "text-stone-300 hover:text-white"
+                      }`}
+                    >
+                      ✓ Completed Orders ({completedOrdersList.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAccountingFilterMode("ALL_PAID")}
+                      className={`px-3 py-1.5 font-condensed uppercase tracking-wider text-xs transition ${
+                        accountingFilterMode === "ALL_PAID"
+                          ? "bg-bucky-red text-white font-bold"
+                          : "text-stone-300 hover:text-white"
+                      }`}
+                    >
+                      All Paid Today ({orders.length})
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      exportAccountingCsv({
+                        id: "tonight-live",
+                        dateLabel: closeoutDateLabel,
+                        ...liveAccountingSummary
+                      })
+                    }
+                    className="px-3.5 py-2 bg-white hover:bg-bucky-cream text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-extrabold border-2 border-bucky-charcoal shadow"
+                  >
+                    📥 Export Tonight CSV
+                  </button>
+                </div>
+              </div>
+
+              {closeoutSuccessBanner && (
+                <div className="bg-emerald-900 text-white border-2 border-bucky-charcoal p-4 vintage-shadow flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 font-bold">
+                    <span className="text-lg">✅</span>
+                    <span>{closeoutSuccessBanner}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCloseoutSuccessBanner("")}
+                    className="px-2 py-1 bg-black/30 hover:bg-black/50 text-white font-condensed uppercase text-[11px]"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              {/* Live Shift Financial KPI Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+                <div className="bg-white border-2 border-bucky-charcoal p-4 vintage-shadow-sm">
+                  <span className="font-condensed uppercase text-[11px] tracking-wider text-stone-500 block font-bold">
+                    {accountingFilterMode === "COMPLETED_ONLY" ? "Completed Orders" : "Total Paid Orders"}
+                  </span>
+                  <span className="font-display font-black text-2xl text-bucky-charcoal mt-1 block">
+                    {liveAccountingSummary.orderCount}
+                  </span>
+                  <span className="text-[11px] text-stone-500">
+                    {liveAccountingSummary.totalItemsSold} items • Avg ${liveAccountingSummary.avgOrderValue.toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="bg-white border-2 border-bucky-charcoal p-4 vintage-shadow-sm">
+                  <span className="font-condensed uppercase text-[11px] tracking-wider text-stone-500 block font-bold">
+                    Net Food & Drink Sales
+                  </span>
+                  <span className="font-display font-black text-2xl text-bucky-charcoal mt-1 block">
+                    ${liveAccountingSummary.netSales.toFixed(2)}
+                  </span>
+                  <span className="text-[11px] text-stone-500">Pre-tax menu subtotal</span>
+                </div>
+
+                <div className="bg-white border-2 border-bucky-charcoal p-4 vintage-shadow-sm">
+                  <span className="font-condensed uppercase text-[11px] tracking-wider text-stone-500 block font-bold">
+                    NJ Sales Tax (6.625%)
+                  </span>
+                  <span className="font-display font-black text-2xl text-stone-800 mt-1 block">
+                    ${liveAccountingSummary.taxCollected.toFixed(2)}
+                  </span>
+                  <span className="text-[11px] text-stone-500">NJ Division of Taxation</span>
+                </div>
+
+                <div className="bg-white border-2 border-bucky-charcoal p-4 vintage-shadow-sm">
+                  <span className="font-condensed uppercase text-[11px] tracking-wider text-stone-500 block font-bold">
+                    Kitchen & Crew Tips
+                  </span>
+                  <span className="font-display font-black text-2xl text-emerald-800 mt-1 block">
+                    ${liveAccountingSummary.tipsCollected.toFixed(2)}
+                  </span>
+                  <span className="text-[11px] text-stone-500">15% / 18% / 20% / Custom</span>
+                </div>
+
+                <div className="bg-bucky-parchment border-2 border-bucky-charcoal p-4 vintage-shadow-sm">
+                  <span className="font-condensed uppercase text-[11px] tracking-wider text-bucky-red block font-bold">
+                    Gross Revenue Collected
+                  </span>
+                  <span className="font-display font-black text-2xl text-bucky-red mt-1 block">
+                    ${liveAccountingSummary.grossRevenue.toFixed(2)}
+                  </span>
+                  <span className="text-[11px] text-stone-600">Sales + Tax + Crew Tips</span>
+                </div>
+
+                <div className="bg-white border-2 border-bucky-charcoal p-4 vintage-shadow-sm">
+                  <span className="font-condensed uppercase text-[11px] tracking-wider text-stone-500 block font-bold">
+                    Channel Breakdown
+                  </span>
+                  <div className="mt-1 space-y-0.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-stone-600 font-semibold">Online:</span>
+                      <span className="font-bold text-bucky-charcoal">${liveAccountingSummary.onlineRevenue.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-stone-600 font-semibold">Shop POS:</span>
+                      <span className="font-bold text-bucky-charcoal">${liveAccountingSummary.posRevenue.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* =============================================================== */}
+              {/* END-OF-NIGHT CLOSEOUT & Z-REPORT ARCHIVE BUILDER                */}
+              {/* =============================================================== */}
+              <form
+                onSubmit={closeOutNightAndArchiveSummary}
+                className="bg-bucky-parchment border-2 border-bucky-charcoal p-5 vintage-shadow space-y-4"
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b-2 border-bucky-charcoal pb-3">
+                  <div>
+                    <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold block">
+                      End-of-Night Closeout Builder
+                    </span>
+                    <h3 className="font-display font-black text-xl text-bucky-charcoal">
+                      🌙 Build Tonight’s Summary & Save to Nightly Archive
+                    </h3>
+                  </div>
+                  <span className="text-xs text-stone-600">
+                    Snapshots tonight’s completed orders, utilized menu items, dough/prep consumption & revenue into the permanent archive.
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end text-xs">
+                  <div className="md:col-span-4">
+                    <label className="block font-condensed uppercase tracking-wider text-stone-700 font-bold mb-1">
+                      Shift / Night Title
+                    </label>
+                    <input
+                      type="text"
+                      value={closeoutDateLabel}
+                      onChange={e => setCloseoutDateLabel(e.target.value)}
+                      placeholder="e.g. Saturday, Oct 31, 2026 — Dinner Service"
+                      className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal font-bold text-bucky-charcoal"
+                    />
+                  </div>
+
+                  <div className="md:col-span-5">
+                    <label className="block font-condensed uppercase tracking-wider text-stone-700 font-bold mb-1">
+                      Closing Manager Notes (Dough Leftover, Rush Notes, etc.)
+                    </label>
+                    <input
+                      type="text"
+                      value={closeoutManagerNote}
+                      onChange={e => setCloseoutManagerNote(e.target.value)}
+                      placeholder="e.g. Smooth Friday rush, 4 sourdough balls remaining at 8:00 PM close."
+                      className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal font-medium text-bucky-charcoal"
+                    />
+                  </div>
+
+                  <div className="md:col-span-3 flex flex-col gap-2">
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none text-[11px] font-semibold text-stone-700">
+                      <input
+                        type="checkbox"
+                        checked={clearPickedUpOnCloseout}
+                        onChange={e => setClearPickedUpOnCloseout(e.target.checked)}
+                        className="w-4 h-4 accent-bucky-red"
+                      />
+                      <span>Clear completed orders after archiving</span>
+                    </label>
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-4 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-widest text-xs font-extrabold border-2 border-bucky-charcoal vintage-shadow-sm"
+                    >
+                      🌙 Close Out Night & Archive Z-Report
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              {/* =============================================================== */}
+              {/* UTILIZED PRODUCT & DOUGH/PREP CONSUMPTION TABLES (2 COLUMNS)    */}
+              {/* =============================================================== */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left 7 Cols: Utilized Menu Items & Product Sales */}
+                <div className="lg:col-span-7 bg-white border-2 border-bucky-charcoal p-5 vintage-shadow space-y-3">
+                  <div className="flex items-center justify-between border-b-2 border-bucky-charcoal pb-2.5">
+                    <div>
+                      <span className="font-condensed uppercase text-[11px] tracking-widest text-bucky-red font-bold block">
+                        Product Mix (PMIX)
+                      </span>
+                      <h3 className="font-display font-black text-xl text-bucky-charcoal">
+                        🍕 Utilized Menu Products & Item Revenue
+                      </h3>
+                    </div>
+                    <span className="font-condensed uppercase text-xs text-stone-600 font-bold">
+                      {liveAccountingSummary.totalItemsSold} Total Units Sold
+                    </span>
+                  </div>
+
+                  {liveAccountingSummary.utilizedMenuItems.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-stone-500 border border-dashed border-stone-300">
+                      No orders in this filter yet. Mark an order as handed off in the KDS or switch to "All Paid Today".
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-bucky-charcoal">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-bucky-charcoal text-white font-condensed uppercase tracking-wider text-[11px]">
+                            <th className="py-2 px-3">Menu Item</th>
+                            <th className="py-2 px-3">Category</th>
+                            <th className="py-2 px-3 text-center">Qty Sold</th>
+                            <th className="py-2 px-3 text-right">Gross Sales</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-200">
+                          {liveAccountingSummary.utilizedMenuItems.map(item => (
+                            <tr key={item.id} className="hover:bg-bucky-cream/60">
+                              <td className="py-2 px-3 font-display font-bold text-bucky-charcoal">
+                                {item.name}
+                              </td>
+                              <td className="py-2 px-3 text-stone-600 text-[11px]">
+                                {item.category}
+                              </td>
+                              <td className="py-2 px-3 text-center font-mono font-bold text-bucky-charcoal">
+                                {item.qty}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-bucky-red">
+                                ${item.revenue.toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right 5 Cols: Utilized Kitchen Dough & Prep Ingredients */}
+                <div className="lg:col-span-5 bg-white border-2 border-bucky-charcoal p-5 vintage-shadow space-y-3">
+                  <div className="flex items-center justify-between border-b-2 border-bucky-charcoal pb-2.5">
+                    <div>
+                      <span className="font-condensed uppercase text-[11px] tracking-widest text-bucky-red font-bold block">
+                        Back-of-House Depletion
+                      </span>
+                      <h3 className="font-display font-black text-xl text-bucky-charcoal">
+                        🥣 Utilized Dough & Prep Stock
+                      </h3>
+                    </div>
+                    <span className="font-condensed uppercase text-xs text-stone-600 font-bold">
+                      Recipe Depletion
+                    </span>
+                  </div>
+
+                  {liveAccountingSummary.utilizedIngredients.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-stone-500 border border-dashed border-stone-300">
+                      No dough or prep ingredients utilized in this filter yet.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-bucky-charcoal">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-bucky-charcoal text-white font-condensed uppercase tracking-wider text-[11px]">
+                            <th className="py-2 px-3">Dough / Prep Ingredient</th>
+                            <th className="py-2 px-3 text-center">Utilized</th>
+                            <th className="py-2 px-3 text-right">Stock Left</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-200">
+                          {liveAccountingSummary.utilizedIngredients.map(ing => {
+                            const liveInv = inventory.find(x => x.id === ing.id);
+                            return (
+                              <tr key={ing.id} className="hover:bg-bucky-cream/60">
+                                <td className="py-2 px-3">
+                                  <span className="font-display font-bold text-bucky-charcoal block">
+                                    {ing.name}
+                                  </span>
+                                  <span className="text-[10px] font-condensed uppercase text-stone-500">
+                                    {ing.category}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-center font-mono font-bold text-bucky-red">
+                                  {ing.qtyUsed} {ing.unit}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono font-semibold text-stone-700">
+                                  {liveInv ? `${liveInv.stock} / ${liveInv.dailyPar}` : "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* =============================================================== */}
+              {/* COMPLETED & ACTIVE ORDER ACCOUNTING LEDGER                      */}
+              {/* =============================================================== */}
+              <div className="bg-white border-2 border-bucky-charcoal p-5 vintage-shadow space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-bucky-charcoal pb-2.5">
+                  <div>
+                    <span className="font-condensed uppercase text-[11px] tracking-widest text-bucky-red font-bold block">
+                      Itemized Order Ledger
+                    </span>
+                    <h3 className="font-display font-black text-xl text-bucky-charcoal">
+                      🧾 {accountingFilterMode === "COMPLETED_ONLY" ? "Completed Orders Ledger" : "All Today’s Paid Orders Ledger"} ({accountingOrdersToAnalyze.length})
+                    </h3>
+                  </div>
+                  <span className="text-xs text-stone-600">
+                    Every order handed off in Kitchen KDS is automatically logged here with payment method, tax, tip & total.
+                  </span>
+                </div>
+
+                {accountingOrdersToAnalyze.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-stone-500 border border-dashed border-stone-300">
+                    No completed orders yet. Advance a ticket in Kitchen KDS or switch filter to "All Paid Today".
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-bucky-charcoal">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-bucky-charcoal text-white font-condensed uppercase tracking-wider text-[11px]">
+                          <th className="py-2.5 px-3">Order ID & Time</th>
+                          <th className="py-2.5 px-3">Guest & Channel</th>
+                          <th className="py-2.5 px-3">Status</th>
+                          <th className="py-2.5 px-3">Items Ordered</th>
+                          <th className="py-2.5 px-3">Payment Method</th>
+                          <th className="py-2.5 px-3 text-right">Subtotal</th>
+                          <th className="py-2.5 px-3 text-right">NJ Tax</th>
+                          <th className="py-2.5 px-3 text-right">Tip</th>
+                          <th className="py-2.5 px-3 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-200">
+                        {accountingOrdersToAnalyze.map(order => {
+                          const fin = computeOrderFinancials(order);
+                          return (
+                            <tr key={order.id} className="hover:bg-bucky-cream/60">
+                              <td className="py-2.5 px-3">
+                                <div className="font-display font-black text-bucky-charcoal">{order.id}</div>
+                                <div className="text-[11px] text-stone-500">
+                                  In: {order.createdAt}
+                                  {order.completedAt ? ` • Out: ${order.completedAt}` : ""}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="font-bold text-bucky-charcoal">{order.customerName}</div>
+                                <span className={`inline-block mt-0.5 font-condensed uppercase text-[10px] px-1.5 py-0.2 border font-bold ${
+                                  order.source === "ONLINE"
+                                    ? "bg-bucky-cream text-bucky-red border-bucky-red"
+                                    : "bg-stone-100 text-bucky-charcoal border-bucky-charcoal"
+                                }`}>
+                                  {order.source}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {order.status === "PICKED_UP" ? (
+                                  <span className="bg-emerald-800 text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold">
+                                    ✓ COMPLETED
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="bg-amber-100 text-amber-900 border border-amber-700 font-condensed uppercase text-[10px] px-1.5 py-0.5 font-bold">
+                                      {order.status}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setOrders(prev =>
+                                          prev.map(o =>
+                                            o.id === order.id
+                                              ? {
+                                                  ...o,
+                                                  status: "PICKED_UP",
+                                                  completedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                                                }
+                                              : o
+                                          )
+                                        )
+                                      }
+                                      className="px-2 py-0.5 bg-bucky-charcoal hover:bg-emerald-800 text-white font-condensed uppercase text-[10px] font-bold"
+                                      title="Mark order as completed / picked up"
+                                    >
+                                      ✓ Complete Now
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 max-w-xs">
+                                <div className="text-[11px] text-stone-700 leading-snug">
+                                  {(order.items || []).map(i => `${i.quantity}x ${i.name}`).join(", ")}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-stone-700">
+                                {order.paymentMethod}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono font-semibold">
+                                ${fin.subtotal.toFixed(2)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono text-stone-600">
+                                ${fin.taxAmount.toFixed(2)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono text-emerald-800 font-semibold">
+                                ${fin.tipAmount.toFixed(2)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono font-black text-bucky-red">
+                                ${fin.totalAmount.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* =============================================================== */}
+              {/* HISTORICAL NIGHTLY Z-REPORT ARCHIVE VAULT                       */}
+              {/* =============================================================== */}
+              <div className="bg-white border-2 border-bucky-charcoal p-5 vintage-shadow space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-bucky-charcoal pb-3">
+                  <div>
+                    <span className="font-condensed uppercase text-[11px] tracking-widest text-bucky-red font-bold block">
+                      Permanent Shift Vault
+                    </span>
+                    <h3 className="font-display font-black text-2xl text-bucky-charcoal">
+                      🗄️ End-of-Night Accounting Archive ({nightlyArchive.length} Saved Nights)
+                    </h3>
+                  </div>
+                  <span className="text-xs text-stone-600">
+                    Select any archived night below to inspect its revenue breakdown, utilized menu items, and dough/prep usage.
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                  {/* Left 4 Cols: List of Archived Nights */}
+                  <div className="lg:col-span-4 space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                    {nightlyArchive.map(rep => {
+                      const isSelected = rep.id === selectedArchiveReportId;
+                      return (
+                        <div
+                          key={rep.id}
+                          onClick={() => setSelectedArchiveReportId(rep.id)}
+                          className={`p-3.5 border-2 cursor-pointer transition ${
+                            isSelected
+                              ? "bg-bucky-charcoal text-white border-bucky-charcoal vintage-shadow-sm"
+                              : "bg-bucky-cream hover:bg-bucky-parchment text-bucky-charcoal border-stone-300"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[11px] font-mono">
+                            <span className={isSelected ? "text-amber-300 font-bold" : "text-bucky-red font-bold"}>
+                              {rep.id}
+                            </span>
+                            <span className={isSelected ? "text-stone-300" : "text-stone-500"}>
+                              Closed {rep.closedAt}
+                            </span>
+                          </div>
+                          <h4 className="font-display font-bold text-sm mt-1">
+                            {rep.dateLabel}
+                          </h4>
+                          <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/15 text-xs">
+                            <span>{rep.completedOrdersCount} Orders ({rep.totalItemsSold} items)</span>
+                            <span className={`font-display font-black text-sm ${isSelected ? "text-emerald-300" : "text-bucky-red"}`}>
+                              ${rep.grossRevenue.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Right 8 Cols: Selected Archive Night Detail */}
+                  <div className="lg:col-span-8">
+                    {(() => {
+                      const activeReport =
+                        nightlyArchive.find(r => r.id === selectedArchiveReportId) || nightlyArchive[0];
+                      if (!activeReport) {
+                        return (
+                          <div className="p-8 text-center text-xs text-stone-500 border border-dashed border-stone-300">
+                            No archived nights yet. Click "Close Out Night & Archive Z-Report" above to save your first report.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="bg-bucky-cream border-2 border-bucky-charcoal p-5 space-y-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3 border-b-2 border-bucky-charcoal pb-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="bg-bucky-charcoal text-white font-mono text-[11px] px-2 py-0.5 font-bold">
+                                  {activeReport.id}
+                                </span>
+                                <span className="text-xs text-stone-600 font-semibold">
+                                  Closed at {activeReport.closedAt}
+                                </span>
+                              </div>
+                              <h4 className="font-display font-black text-xl text-bucky-charcoal mt-1">
+                                {activeReport.dateLabel}
+                              </h4>
+                              {activeReport.managerNote && (
+                                <p className="text-xs text-stone-700 italic mt-1">
+                                  “{activeReport.managerNote}”
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => exportAccountingCsv(activeReport)}
+                                className="px-3 py-1.5 bg-white hover:bg-stone-100 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                              >
+                                📥 Export Archive CSV
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNightlyArchive(prev => prev.filter(r => r.id !== activeReport.id));
+                                }}
+                                className="px-2.5 py-1.5 bg-white hover:bg-red-100 text-bucky-red font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-red"
+                              >
+                                🗑️ Delete
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Archived Night Summary Metrics */}
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                            <div className="bg-white p-2.5 border border-stone-300">
+                              <span className="font-condensed uppercase text-[10px] text-stone-500 block">Orders / Items</span>
+                              <span className="font-display font-black text-base text-bucky-charcoal">
+                                {activeReport.completedOrdersCount} / {activeReport.totalItemsSold}
+                              </span>
+                            </div>
+                            <div className="bg-white p-2.5 border border-stone-300">
+                              <span className="font-condensed uppercase text-[10px] text-stone-500 block">Net Sales</span>
+                              <span className="font-display font-black text-base text-bucky-charcoal">
+                                ${activeReport.netSales.toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="bg-white p-2.5 border border-stone-300">
+                              <span className="font-condensed uppercase text-[10px] text-stone-500 block">NJ Sales Tax</span>
+                              <span className="font-display font-black text-base text-stone-700">
+                                ${activeReport.taxCollected.toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="bg-white p-2.5 border border-stone-300">
+                              <span className="font-condensed uppercase text-[10px] text-stone-500 block">Crew Tips</span>
+                              <span className="font-display font-black text-base text-emerald-800">
+                                ${activeReport.tipsCollected.toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="bg-bucky-parchment p-2.5 border border-bucky-charcoal">
+                              <span className="font-condensed uppercase text-[10px] text-bucky-red font-bold block">Gross Revenue</span>
+                              <span className="font-display font-black text-base text-bucky-red">
+                                ${activeReport.grossRevenue.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Archived Utilized Products & Dough/Prep Breakdown */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                            <div className="bg-white border border-bucky-charcoal p-3">
+                              <h5 className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal border-b border-stone-200 pb-1.5 mb-2">
+                                🍕 Top Utilized Menu Items
+                              </h5>
+                              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                {(activeReport.utilizedMenuItems || []).map(m => (
+                                  <div key={m.id} className="flex items-center justify-between">
+                                    <span className="font-semibold text-bucky-charcoal truncate pr-2">
+                                      {m.qty}x {m.name}
+                                    </span>
+                                    <span className="font-mono font-bold text-bucky-red shrink-0">
+                                      ${m.revenue.toFixed(2)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="bg-white border border-bucky-charcoal p-3">
+                              <h5 className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal border-b border-stone-200 pb-1.5 mb-2">
+                                🥣 Utilized Dough & Prep Stock
+                              </h5>
+                              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                {(activeReport.utilizedIngredients || []).map(ing => (
+                                  <div key={ing.id} className="flex items-center justify-between">
+                                    <span className="font-semibold text-bucky-charcoal truncate pr-2">
+                                      {ing.name}
+                                    </span>
+                                    <span className="font-mono font-bold text-stone-700 shrink-0">
+                                      {ing.qtyUsed} {ing.unit}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </main>
+          )}
+
+          {/* ================================================================= */}
           {/* FOOTER (MATCHING BUCKYSREALGOODPIZZA.COM)                         */}
           {/* ================================================================= */}
           <footer className="bg-bucky-charcoal text-stone-300 border-t-4 border-bucky-red mt-12">
@@ -6140,7 +7158,7 @@
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-1.5 pt-2 border-t-2 border-bucky-charcoal">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-2 border-t-2 border-bucky-charcoal">
                   <button
                     type="button"
                     onClick={e => handleStaffPinSubmit(e, "POS")}
@@ -6159,7 +7177,14 @@
                     onClick={e => handleStaffPinSubmit(e, "MENU_EDITOR")}
                     className="py-2.5 bg-amber-400 hover:bg-amber-300 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-extrabold border border-bucky-charcoal"
                   >
-                    📋 Menu Edit
+                    📋 Menu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => handleStaffPinSubmit(e, "ACCOUNTING")}
+                    className="py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-condensed uppercase tracking-wider text-xs font-extrabold border border-bucky-charcoal"
+                  >
+                    💰 Accounting
                   </button>
                 </div>
               </form>
