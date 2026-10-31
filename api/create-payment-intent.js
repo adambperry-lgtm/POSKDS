@@ -62,7 +62,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const stripe = new Stripe(secretKey);
-    const { cart = [], customerName, customerPhone, customerEmail, promisedTime } = req.body || {};
+    const { cart = [], tipAmount = 0, customerName, customerPhone, customerEmail, promisedTime } = req.body || {};
 
     if (!Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Cart is empty." });
@@ -79,7 +79,8 @@ module.exports = async function handler(req, res) {
     }, 0);
 
     const tax = subtotal * NJ_SALES_TAX_RATE;
-    const totalUsd = subtotal + tax;
+    const safeTip = Math.max(0, parseFloat(tipAmount) || 0);
+    const totalUsd = subtotal + tax + safeTip;
     const amountInCents = Math.max(50, Math.round(totalUsd * 100)); // Stripe minimum is $0.50
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -93,6 +94,7 @@ module.exports = async function handler(req, res) {
         customerName: customerName || "Online Guest",
         customerPhone: customerPhone || "",
         promisedTime: promisedTime || "ASAP",
+        tipUsd: safeTip.toFixed(2),
         itemsSummary: cart.map(i => `${i.quantity}x ${i.name}`).join(", ").slice(0, 490)
       }
     });

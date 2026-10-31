@@ -985,9 +985,11 @@
       const [newCustomInvNotes, setNewCustomInvNotes] = useState("");
       const [newCustomInvAddToMenu, setNewCustomInvAddToMenu] = useState(true);
 
-      // Checkout Modal & Stripe Payment Element State (Option 1)
+      // Checkout Modal, Tip Function & Stripe Payment Element State (Option 1)
       const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
       const [isStripeSettingsOpen, setIsStripeSettingsOpen] = useState(false);
+      const [tipSelection, setTipSelection] = useState("18"); // "15" | "18" | "20" | "CUSTOM" | "NONE"
+      const [customTipInput, setCustomTipInput] = useState("");
       const [customerName, setCustomerName] = useState("");
       const [customerPhone, setCustomerPhone] = useState("");
       const [customerEmail, setCustomerEmail] = useState("");
@@ -1670,7 +1672,28 @@
 
       const cartSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
       const njSalesTax = cartSubtotal * 0.06625; // NJ 6.625% Sales Tax
-      const cartTotal = cartSubtotal + njSalesTax;
+      const tipAmount = useMemo(() => {
+        if (cart.length === 0) return 0;
+        if (tipSelection === "15") return cartSubtotal * 0.15;
+        if (tipSelection === "18") return cartSubtotal * 0.18;
+        if (tipSelection === "20") return cartSubtotal * 0.20;
+        if (tipSelection === "CUSTOM") {
+          const parsed = parseFloat(customTipInput);
+          return !Number.isNaN(parsed) && parsed >= 0 ? parsed : 0;
+        }
+        return 0;
+      }, [cart.length, cartSubtotal, tipSelection, customTipInput]);
+      const tipLabelText =
+        tipSelection === "15"
+          ? "15%"
+          : tipSelection === "18"
+          ? "18%"
+          : tipSelection === "20"
+          ? "20%"
+          : tipSelection === "CUSTOM"
+          ? "Custom"
+          : "No Tip";
+      const cartTotal = cartSubtotal + njSalesTax + tipAmount;
 
       // ========================================================================
       // OPTION 1: EMBEDDED STRIPE PAYMENT ELEMENT & PAYMENTINTENT ENGINE
@@ -1727,6 +1750,7 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   cart: cart.map(i => ({ id: i.id, name: i.name, price: i.price, quantity: i.quantity })),
+                  tipAmount: Number(tipAmount.toFixed(2)),
                   customerName: customerName || "Online Guest",
                   customerPhone: customerPhone || "(973) 200-2388",
                   customerEmail: customerEmail || undefined,
@@ -1864,11 +1888,17 @@
           paid: true,
           paymentMethod: paymentLabel,
           stripePaymentIntentId: generatedTxId,
+          subtotal: Number(cartSubtotal.toFixed(2)),
+          taxAmount: Number(njSalesTax.toFixed(2)),
+          tipAmount: Number(tipAmount.toFixed(2)),
+          tipLabel: tipLabelText,
+          totalAmount: Number(cartTotal.toFixed(2)),
           items: [...cart]
         };
 
         setOrders(prev => [newOrder, ...prev]);
         setCart([]);
+        setCustomTipInput("");
         setCustomerName("");
         setCustomerPhone("");
         setIsCheckoutOpen(false);
@@ -2829,6 +2859,116 @@
                     </div>
                   )}
 
+                  {/* TIP FUNCTION: PREFILLED (15%, 18%, 20%) + CUSTOM BUTTON */}
+                  <div className="border-t-2 border-bucky-charcoal pt-3 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                        Tip for the Kitchen & Crew
+                      </span>
+                      {tipSelection !== "NONE" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTipSelection("NONE");
+                            setCustomTipInput("");
+                          }}
+                          className="text-[11px] font-condensed uppercase text-stone-500 hover:text-bucky-red underline"
+                        >
+                          No Tip ($0)
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { id: "15", label: "15%", pct: 0.15 },
+                        { id: "18", label: "18%", pct: 0.18 },
+                        { id: "20", label: "20%", pct: 0.20 }
+                      ].map(opt => {
+                        const isSelected = tipSelection === opt.id;
+                        const optDollar = cartSubtotal * opt.pct;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setTipSelection(isSelected ? "NONE" : opt.id)}
+                            className={`py-2 px-1.5 border-2 transition flex flex-col items-center justify-center ${
+                              isSelected
+                                ? "bg-bucky-red text-white border-bucky-charcoal font-bold vintage-shadow-sm"
+                                : "bg-bucky-cream hover:bg-bucky-parchment text-bucky-charcoal border-bucky-charcoal"
+                            }`}
+                          >
+                            <span className="font-condensed uppercase tracking-wider text-xs font-extrabold leading-none">
+                              {opt.label}
+                            </span>
+                            <span className={`text-[10px] mt-0.5 font-mono ${isSelected ? "text-white/90" : "text-stone-600"}`}>
+                              ${optDollar.toFixed(2)}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        onClick={() => setTipSelection("CUSTOM")}
+                        className={`py-2 px-1.5 border-2 transition flex flex-col items-center justify-center ${
+                          tipSelection === "CUSTOM"
+                            ? "bg-bucky-charcoal text-white border-bucky-charcoal font-bold vintage-shadow-sm"
+                            : "bg-bucky-cream hover:bg-bucky-parchment text-bucky-charcoal border-bucky-charcoal"
+                        }`}
+                      >
+                        <span className="font-condensed uppercase tracking-wider text-xs font-extrabold leading-none">
+                          Custom
+                        </span>
+                        <span className={`text-[10px] mt-0.5 font-mono ${tipSelection === "CUSTOM" ? "text-amber-300" : "text-stone-600"}`}>
+                          {tipSelection === "CUSTOM" ? `$${tipAmount.toFixed(2)}` : "$ Amount"}
+                        </span>
+                      </button>
+                    </div>
+
+                    {tipSelection === "CUSTOM" && (
+                      <div className="bg-bucky-parchment border-2 border-bucky-charcoal p-2.5 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-condensed uppercase tracking-wider text-[11px] font-bold text-bucky-charcoal whitespace-nowrap">
+                            Custom Tip ($):
+                          </span>
+                          <div className="relative flex-1">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-stone-500">$</span>
+                            <input
+                              type="number"
+                              step="0.50"
+                              min="0"
+                              placeholder="0.00"
+                              value={customTipInput}
+                              onChange={e => setCustomTipInput(e.target.value)}
+                              className="w-full pl-6 pr-2.5 py-1.5 bg-white border-2 border-bucky-charcoal font-mono font-bold text-xs text-bucky-charcoal"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="text-[10px] font-condensed uppercase text-stone-600 mr-1">Quick Add:</span>
+                          {[2, 5, 8, 10].map(amt => (
+                            <button
+                              key={amt}
+                              type="button"
+                              onClick={() => setCustomTipInput(String(amt))}
+                              className="px-2 py-0.5 bg-white hover:bg-stone-100 border border-bucky-charcoal font-mono text-[10px] font-bold"
+                            >
+                              ${amt}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setCustomTipInput("0")}
+                            className="px-2 py-0.5 bg-stone-200 hover:bg-stone-300 border border-bucky-charcoal font-condensed uppercase text-[10px] font-bold"
+                          >
+                            $0
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* TOTALS & CHECKOUT BUTTONS */}
                   <div className="border-t-2 border-bucky-charcoal pt-3 space-y-1.5 text-xs">
                     <div className="flex justify-between text-stone-600">
@@ -2839,7 +2979,11 @@
                       <span>NJ Sales Tax (6.625%)</span>
                       <span className="font-semibold">${njSalesTax.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-base font-display font-black text-bucky-charcoal pt-1">
+                    <div className="flex justify-between text-stone-700">
+                      <span>Tip ({tipLabelText})</span>
+                      <span className="font-semibold text-bucky-red">${tipAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-base font-display font-black text-bucky-charcoal pt-1 border-t border-stone-200">
                       <span>Total</span>
                       <span>${cartTotal.toFixed(2)}</span>
                     </div>
@@ -3999,19 +4143,99 @@
                   )}
                 </div>
 
-                {/* Order Total Summary inside Modal */}
-                <div className="bg-bucky-parchment border border-bucky-charcoal p-3 text-xs space-y-1">
-                  <div className="flex justify-between text-stone-600">
-                    <span>Subtotal ({cart.reduce((s, i) => s + i.quantity, 0)} items)</span>
-                    <span className="font-bold">${cartSubtotal.toFixed(2)}</span>
+                {/* Tip Selector & Order Total Summary inside Checkout Modal */}
+                <div className="bg-bucky-parchment border-2 border-bucky-charcoal p-3.5 text-xs space-y-2.5">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                        Tip for the Kitchen & Crew
+                      </span>
+                      {tipSelection !== "NONE" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTipSelection("NONE");
+                            setCustomTipInput("");
+                          }}
+                          className="text-[11px] font-condensed uppercase text-stone-500 hover:text-bucky-red underline"
+                        >
+                          No Tip ($0)
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { id: "15", label: "15%", pct: 0.15 },
+                        { id: "18", label: "18%", pct: 0.18 },
+                        { id: "20", label: "20%", pct: 0.20 }
+                      ].map(opt => {
+                        const isSelected = tipSelection === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setTipSelection(isSelected ? "NONE" : opt.id)}
+                            className={`py-1.5 px-1 border transition flex flex-col items-center justify-center ${
+                              isSelected
+                                ? "bg-bucky-red text-white border-bucky-charcoal font-bold"
+                                : "bg-white hover:bg-stone-100 text-bucky-charcoal border-bucky-charcoal"
+                            }`}
+                          >
+                            <span className="font-condensed uppercase text-xs font-extrabold">{opt.label}</span>
+                            <span className={`text-[10px] font-mono ${isSelected ? "text-white/90" : "text-stone-500"}`}>
+                              ${(cartSubtotal * opt.pct).toFixed(2)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => setTipSelection("CUSTOM")}
+                        className={`py-1.5 px-1 border transition flex flex-col items-center justify-center ${
+                          tipSelection === "CUSTOM"
+                            ? "bg-bucky-charcoal text-white border-bucky-charcoal font-bold"
+                            : "bg-white hover:bg-stone-100 text-bucky-charcoal border-bucky-charcoal"
+                        }`}
+                      >
+                        <span className="font-condensed uppercase text-xs font-extrabold">Custom</span>
+                        <span className={`text-[10px] font-mono ${tipSelection === "CUSTOM" ? "text-amber-300" : "text-stone-500"}`}>
+                          {tipSelection === "CUSTOM" ? `$${tipAmount.toFixed(2)}` : "$ Amount"}
+                        </span>
+                      </button>
+                    </div>
+                    {tipSelection === "CUSTOM" && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="font-condensed uppercase text-[11px] font-bold text-stone-700">Custom Tip ($):</span>
+                        <input
+                          type="number"
+                          step="0.50"
+                          min="0"
+                          placeholder="0.00"
+                          value={customTipInput}
+                          onChange={e => setCustomTipInput(e.target.value)}
+                          className="w-28 px-2.5 py-1 bg-white border-2 border-bucky-charcoal font-mono font-bold text-xs"
+                        />
+                      </div>
+                    )}
                   </div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>NJ Sales Tax (6.625%)</span>
-                    <span className="font-bold">${njSalesTax.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-display font-black text-bucky-charcoal pt-1 border-t border-stone-300">
-                    <span>Total Charge</span>
-                    <span className="text-bucky-red">${cartTotal.toFixed(2)}</span>
+
+                  <div className="border-t border-stone-300 pt-2 space-y-1">
+                    <div className="flex justify-between text-stone-600">
+                      <span>Subtotal ({cart.reduce((s, i) => s + i.quantity, 0)} items)</span>
+                      <span className="font-bold">${cartSubtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-600">
+                      <span>NJ Sales Tax (6.625%)</span>
+                      <span className="font-bold">${njSalesTax.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-700">
+                      <span>Tip ({tipLabelText})</span>
+                      <span className="font-bold text-bucky-red">${tipAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-display font-black text-bucky-charcoal pt-1 border-t border-stone-300">
+                      <span>Total Charge</span>
+                      <span className="text-bucky-red">${cartTotal.toFixed(2)}</span>
+                    </div>
                   </div>
                 </div>
 
