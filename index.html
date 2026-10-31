@@ -867,6 +867,14 @@
       const [inventory, setInventory] = useState(INITIAL_INVENTORY);
       const [kdsInventoryFilter, setKdsInventoryFilter] = useState("ALL"); // "ALL" | "DOUGH" | "PREP" | "ALERTS"
       const [showKdsInventoryPanel, setShowKdsInventoryPanel] = useState(true);
+      const [isBulkInventoryOpen, setIsBulkInventoryOpen] = useState(false);
+      const [draftInventory, setDraftInventory] = useState([]);
+      const [bulkFillValue, setBulkFillValue] = useState("20");
+      const [newCustomInvName, setNewCustomInvName] = useState("");
+      const [newCustomInvCategory, setNewCustomInvCategory] = useState("PREP");
+      const [newCustomInvStock, setNewCustomInvStock] = useState("15");
+      const [newCustomInvPar, setNewCustomInvPar] = useState("25");
+      const [newCustomInvUnit, setNewCustomInvUnit] = useState("portions");
 
       // Checkout Modal & Payment State
       const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -1004,6 +1012,115 @@
             eightySixed: false
           }))
         );
+      };
+
+      // Direct inline setter for any field on an inventory item (stock, dailyPar, lowThreshold, traySize)
+      const setInventoryItemField = (invId, field, rawValue) => {
+        const parsed = Math.max(0, parseInt(rawValue, 10) || 0);
+        setInventory(prev =>
+          prev.map(item => {
+            if (item.id !== invId) return item;
+            if (field === "stock") {
+              return {
+                ...item,
+                stock: parsed,
+                eightySixed: parsed === 0
+              };
+            }
+            return {
+              ...item,
+              [field]: Math.max(1, parsed)
+            };
+          })
+        );
+      };
+
+      // Open Bulk "Set All Inventory Counts" Modal
+      const openBulkInventoryModal = () => {
+        setDraftInventory(inventory.map(item => ({ ...item })));
+        setIsBulkInventoryOpen(true);
+      };
+
+      // Update a row inside the Bulk Inventory Modal draft
+      const updateDraftInventoryField = (invId, field, rawValue) => {
+        setDraftInventory(prev =>
+          prev.map(item => {
+            if (item.id !== invId) return item;
+            if (field === "eightySixed") {
+              const next86 = Boolean(rawValue);
+              return {
+                ...item,
+                eightySixed: next86,
+                stock: next86 ? 0 : (item.stock === 0 ? item.dailyPar : item.stock)
+              };
+            }
+            const parsed = Math.max(0, parseInt(rawValue, 10) || 0);
+            if (field === "stock") {
+              return {
+                ...item,
+                stock: parsed,
+                eightySixed: parsed === 0
+              };
+            }
+            return {
+              ...item,
+              [field]: Math.max(1, parsed)
+            };
+          })
+        );
+      };
+
+      // Apply preset to all draft items inside the Bulk Modal
+      const applyDraftPreset = (mode, targetCategory = "ALL") => {
+        const customNum = Math.max(0, parseInt(bulkFillValue, 10) || 0);
+        setDraftInventory(prev =>
+          prev.map(item => {
+            if (targetCategory !== "ALL" && item.category !== targetCategory) return item;
+            if (mode === "FULL_PAR") {
+              return { ...item, stock: item.dailyPar, eightySixed: false };
+            }
+            if (mode === "HALF_PAR") {
+              const half = Math.max(1, Math.round(item.dailyPar * 0.5));
+              return { ...item, stock: half, eightySixed: false };
+            }
+            if (mode === "ZERO_ALL") {
+              return { ...item, stock: 0, eightySixed: true };
+            }
+            if (mode === "CUSTOM_VALUE") {
+              return { ...item, stock: customNum, eightySixed: customNum === 0 };
+            }
+            return item;
+          })
+        );
+      };
+
+      // Add a new custom inventory item from the Bulk Modal
+      const handleAddCustomInventoryItem = (e) => {
+        e.preventDefault();
+        if (!newCustomInvName.trim()) return;
+        const stockNum = Math.max(0, parseInt(newCustomInvStock, 10) || 0);
+        const parNum = Math.max(1, parseInt(newCustomInvPar, 10) || 20);
+        const newItem = {
+          id: `custom-${Date.now()}`,
+          name: newCustomInvName.trim(),
+          shortName: newCustomInvName.trim(),
+          category: newCustomInvCategory,
+          stock: stockNum,
+          dailyPar: parNum,
+          lowThreshold: Math.max(2, Math.round(parNum * 0.2)),
+          unit: newCustomInvUnit.trim() || "portions",
+          traySize: 6,
+          eightySixed: stockNum === 0,
+          notes: "Custom kitchen inventory item"
+        };
+        setDraftInventory(prev => [...prev, newItem]);
+        setNewCustomInvName("");
+      };
+
+      // Save all changes from Bulk Modal to live KDS Inventory
+      const saveBulkInventoryChanges = () => {
+        setInventory(draftInventory);
+        setIsBulkInventoryOpen(false);
       };
 
       // Quick summary counts for header & KDS banner
@@ -1908,8 +2025,8 @@
                     {/* Category Filter Tabs */}
                     {[
                       { id: "ALL", label: `All (${inventory.length})` },
-                      { id: "DOUGH", label: "Dough & Pans (4)" },
-                      { id: "PREP", label: "Toppings & Prep (7)" },
+                      { id: "DOUGH", label: `Dough & Pans (${inventory.filter(i => i.category === "DOUGH").length})` },
+                      { id: "PREP", label: `Toppings & Prep (${inventory.filter(i => i.category === "PREP").length})` },
                       { id: "ALERTS", label: `⚠️ Low / 86'd (${lowOr86Count})` }
                     ].map(tab => (
                       <button
@@ -1927,6 +2044,14 @@
                         {tab.label}
                       </button>
                     ))}
+
+                    <button
+                      onClick={openBulkInventoryModal}
+                      className="px-3.5 py-1.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
+                      title="Open shift count sheet to manually set all inventory items at once"
+                    >
+                      ✏️ Set All Counts
+                    </button>
 
                     <button
                       onClick={resetAllInventoryToPar}
@@ -2000,20 +2125,36 @@
                               {inv.notes}
                             </p>
 
-                            {/* Stock Numbers & Progress Bar */}
-                            <div className="mt-3 bg-white border border-stone-300 p-2.5 space-y-1.5">
-                              <div className="flex items-baseline justify-between">
+                            {/* Stock Numbers, Inline Manual Input & Progress Bar */}
+                            <div className="mt-3 bg-white border border-stone-300 p-2.5 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
                                 <span className="text-[11px] font-condensed uppercase text-stone-500">
-                                  Remaining Available
+                                  Set Count / Par:
                                 </span>
-                                <span className={`font-display font-black text-lg ${
-                                  is86 ? "text-bucky-red" : isLow ? "text-amber-700" : "text-bucky-charcoal"
-                                }`}>
-                                  {is86 ? 0 : inv.stock}{" "}
-                                  <span className="text-xs font-sans font-normal text-stone-500">
-                                    / {inv.dailyPar} {inv.unit}
-                                  </span>
-                                </span>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="999"
+                                    value={is86 ? 0 : inv.stock}
+                                    onChange={e => setInventoryItemField(inv.id, "stock", e.target.value)}
+                                    className={`w-14 px-1.5 py-0.5 text-right font-display font-black text-sm border border-bucky-charcoal bg-bucky-cream focus:outline-none focus:ring-1 focus:ring-bucky-red ${
+                                      is86 ? "text-bucky-red" : isLow ? "text-amber-700" : "text-bucky-charcoal"
+                                    }`}
+                                    title="Type exact current stock count"
+                                  />
+                                  <span className="text-xs text-stone-400 font-bold">/</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="999"
+                                    value={inv.dailyPar}
+                                    onChange={e => setInventoryItemField(inv.id, "dailyPar", e.target.value)}
+                                    className="w-12 px-1 py-0.5 text-right font-sans font-semibold text-xs text-stone-600 border border-stone-300 bg-stone-50 focus:outline-none focus:border-bucky-charcoal"
+                                    title="Type daily par target"
+                                  />
+                                  <span className="text-[10px] text-stone-500">{inv.unit}</span>
+                                </div>
                               </div>
 
                               {/* Bar */}
@@ -2032,9 +2173,20 @@
 
                               <div className="flex items-center justify-between text-[10px] text-stone-600 pt-0.5">
                                 <span>
-                                  In Active KDS Tickets: <strong>{committedInQueue} {inv.unit}</strong>
+                                  In KDS Queue: <strong>{committedInQueue} {inv.unit}</strong>
                                 </span>
-                                <span>Alert ≤ {inv.lowThreshold}</span>
+                                <span className="flex items-center gap-1">
+                                  Alert ≤
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="99"
+                                    value={inv.lowThreshold}
+                                    onChange={e => setInventoryItemField(inv.id, "lowThreshold", e.target.value)}
+                                    className="w-9 px-1 py-0 text-center font-bold text-[10px] border border-stone-300 bg-stone-50"
+                                    title="Low-stock alert threshold"
+                                  />
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -2411,6 +2563,282 @@
                 >
                   Authorize ${cartTotal.toFixed(2)} & Send to Kitchen
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* BULK "SET ALL INVENTORY COUNTS" SHIFT SHEET MODAL                 */}
+          {/* ================================================================= */}
+          {isBulkInventoryOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-4xl w-full max-h-[90vh] flex flex-col vintage-shadow">
+                {/* Modal Header */}
+                <div className="bg-bucky-charcoal text-white px-6 py-4 border-b-2 border-bucky-red flex items-center justify-between">
+                  <div>
+                    <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
+                      Bucky’s Kitchen Shift Prep Sheet
+                    </span>
+                    <h3 className="font-display font-black text-2xl">
+                      Manually Set All Inventory Counts
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setIsBulkInventoryOpen(false)}
+                    className="text-stone-400 hover:text-white font-bold text-xl px-2"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Quick Batch Presets Bar */}
+                <div className="bg-bucky-parchment px-6 py-3 border-b-2 border-bucky-charcoal flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-condensed uppercase tracking-wider font-bold text-stone-700">
+                      Quick Presets:
+                    </span>
+                    <button
+                      onClick={() => applyDraftPreset("FULL_PAR", "ALL")}
+                      className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                    >
+                      100% Full Daily Par
+                    </button>
+                    <button
+                      onClick={() => applyDraftPreset("HALF_PAR", "ALL")}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-bucky-charcoal font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                    >
+                      50% Mid-Shift Count
+                    </button>
+                    <button
+                      onClick={() => applyDraftPreset("ZERO_ALL", "ALL")}
+                      className="px-3 py-1.5 bg-stone-800 hover:bg-bucky-red text-white font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                    >
+                      Zero / 86 All
+                    </button>
+                  </div>
+
+                  {/* Custom Value Fill */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-condensed uppercase tracking-wider font-bold text-stone-700">
+                      Set Value:
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="999"
+                      value={bulkFillValue}
+                      onChange={e => setBulkFillValue(e.target.value)}
+                      className="w-16 px-2 py-1 bg-white border-2 border-bucky-charcoal font-bold text-center"
+                    />
+                    <button
+                      onClick={() => applyDraftPreset("CUSTOM_VALUE", "DOUGH")}
+                      className="px-2.5 py-1 bg-white hover:bg-stone-200 text-bucky-charcoal font-condensed uppercase font-bold border border-bucky-charcoal"
+                    >
+                      → All Dough
+                    </button>
+                    <button
+                      onClick={() => applyDraftPreset("CUSTOM_VALUE", "PREP")}
+                      className="px-2.5 py-1 bg-white hover:bg-stone-200 text-bucky-charcoal font-condensed uppercase font-bold border border-bucky-charcoal"
+                    >
+                      → All Prep
+                    </button>
+                    <button
+                      onClick={() => applyDraftPreset("CUSTOM_VALUE", "ALL")}
+                      className="px-2.5 py-1 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase font-bold border border-bucky-charcoal"
+                    >
+                      → All Items
+                    </button>
+                  </div>
+                </div>
+
+                {/* Scrollable Table of All Inventory Items */}
+                <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                  <div className="overflow-x-auto border-2 border-bucky-charcoal bg-white">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-bucky-charcoal text-white font-condensed uppercase tracking-wider text-[11px]">
+                          <th className="py-2.5 px-3">Item & Station</th>
+                          <th className="py-2.5 px-3 text-center">Current Stock</th>
+                          <th className="py-2.5 px-3 text-center">Daily Par</th>
+                          <th className="py-2.5 px-3 text-center">Low Alert ≤</th>
+                          <th className="py-2.5 px-3 text-center">Tray Size</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-200">
+                        {draftInventory.map(item => (
+                          <tr
+                            key={item.id}
+                            className={item.eightySixed || item.stock === 0 ? "bg-red-50/70" : "hover:bg-bucky-cream/60"}
+                          >
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`font-condensed uppercase text-[10px] px-1.5 py-0.5 font-bold ${
+                                  item.category === "DOUGH"
+                                    ? "bg-bucky-charcoal text-white"
+                                    : "bg-stone-200 text-bucky-charcoal"
+                                }`}>
+                                  {item.category}
+                                </span>
+                                <span className="font-display font-bold text-sm text-bucky-charcoal">
+                                  {item.name}
+                                </span>
+                                <span className="text-stone-400 text-[11px]">({item.unit})</span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <input
+                                type="number"
+                                min="0"
+                                max="999"
+                                value={item.eightySixed ? 0 : item.stock}
+                                onChange={e => updateDraftInventoryField(item.id, "stock", e.target.value)}
+                                className="w-20 px-2 py-1 text-center font-display font-black text-sm bg-bucky-cream border-2 border-bucky-charcoal"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <input
+                                type="number"
+                                min="1"
+                                max="999"
+                                value={item.dailyPar}
+                                onChange={e => updateDraftInventoryField(item.id, "dailyPar", e.target.value)}
+                                className="w-20 px-2 py-1 text-center font-bold bg-white border border-stone-400"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <input
+                                type="number"
+                                min="1"
+                                max="99"
+                                value={item.lowThreshold}
+                                onChange={e => updateDraftInventoryField(item.id, "lowThreshold", e.target.value)}
+                                className="w-16 px-2 py-1 text-center font-bold bg-white border border-stone-400"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <input
+                                type="number"
+                                min="1"
+                                max="99"
+                                value={item.traySize}
+                                onChange={e => updateDraftInventoryField(item.id, "traySize", e.target.value)}
+                                className="w-16 px-2 py-1 text-center font-bold bg-white border border-stone-400"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => updateDraftInventoryField(item.id, "eightySixed", !item.eightySixed)}
+                                className={`px-2.5 py-1 font-condensed uppercase text-[11px] font-bold border border-bucky-charcoal ${
+                                  item.eightySixed || item.stock === 0
+                                    ? "bg-bucky-red text-white"
+                                    : "bg-emerald-100 text-emerald-900"
+                                }`}
+                              >
+                                {item.eightySixed || item.stock === 0 ? "⛔ 86'D" : "✓ ACTIVE"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Add Custom Inventory Item Form */}
+                  <form
+                    onSubmit={handleAddCustomInventoryItem}
+                    className="bg-white border-2 border-bucky-charcoal p-4 flex flex-wrap items-end gap-3 text-xs"
+                  >
+                    <div className="flex-1 min-w-[180px]">
+                      <label className="block font-condensed uppercase text-[11px] font-bold text-stone-600 mb-1">
+                        + Add Custom Inventory Item
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Pistachio Pesto or Hot Honey Jugs"
+                        value={newCustomInvName}
+                        onChange={e => setNewCustomInvName(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-bucky-cream border border-bucky-charcoal font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-condensed uppercase text-[11px] font-bold text-stone-600 mb-1">
+                        Category
+                      </label>
+                      <select
+                        value={newCustomInvCategory}
+                        onChange={e => setNewCustomInvCategory(e.target.value)}
+                        className="px-2.5 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold"
+                      >
+                        <option value="DOUGH">DOUGH / PAN</option>
+                        <option value="PREP">PREP / TOPPING</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-condensed uppercase text-[11px] font-bold text-stone-600 mb-1">
+                        Stock
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={newCustomInvStock}
+                        onChange={e => setNewCustomInvStock(e.target.value)}
+                        className="w-16 px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold text-center"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-condensed uppercase text-[11px] font-bold text-stone-600 mb-1">
+                        Daily Par
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={newCustomInvPar}
+                        onChange={e => setNewCustomInvPar(e.target.value)}
+                        className="w-16 px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold text-center"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-condensed uppercase text-[11px] font-bold text-stone-600 mb-1">
+                        Unit
+                      </label>
+                      <input
+                        type="text"
+                        value={newCustomInvUnit}
+                        onChange={e => setNewCustomInvUnit(e.target.value)}
+                        className="w-20 px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-medium text-center"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 bg-bucky-charcoal hover:bg-bucky-red text-white font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                    >
+                      + Add Row
+                    </button>
+                  </form>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="bg-bucky-parchment px-6 py-4 border-t-2 border-bucky-charcoal flex items-center justify-between">
+                  <span className="text-xs text-stone-600">
+                    Saving updates live KDS counts and immediately updates Online Ordering & POS availability.
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setIsBulkInventoryOpen(false)}
+                      className="px-4 py-2 bg-white hover:bg-stone-200 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-bold border-2 border-bucky-charcoal"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveBulkInventoryChanges}
+                      className="px-6 py-2 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-widest text-sm font-bold border-2 border-bucky-charcoal vintage-shadow-sm"
+                    >
+                      ✓ Save All Inventory Counts
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
