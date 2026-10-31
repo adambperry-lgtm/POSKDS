@@ -912,6 +912,12 @@
       const [showKdsInventoryPanel, setShowKdsInventoryPanel] = useState(true);
       const [isBulkInventoryOpen, setIsBulkInventoryOpen] = useState(false);
       const [isAddCustomModalOpen, setIsAddCustomModalOpen] = useState(false);
+      const [isOvenTimingModalOpen, setIsOvenTimingModalOpen] = useState(false);
+      const [ovenTimingCategoryFilter, setOvenTimingCategoryFilter] = useState("ALL");
+      const [ovenTimingSearch, setOvenTimingSearch] = useState("");
+      const [batchOvenSlotsVal, setBatchOvenSlotsVal] = useState("1.0");
+      const [batchCookMinsVal, setBatchCookMinsVal] = useState("12");
+      const [batchPrepMinsVal, setBatchPrepMinsVal] = useState("3");
       const [draftInventory, setDraftInventory] = useState([]);
       const [bulkFillValue, setBulkFillValue] = useState("20");
 
@@ -1232,6 +1238,135 @@
       const saveBulkInventoryChanges = () => {
         setInventory(draftInventory);
         setIsBulkInventoryOpen(false);
+      };
+
+      // ========================================================================
+      // PER-ITEM OVEN SLOTS, COOK TIME & PREP TIME CUSTOMIZATION ENGINE
+      // ========================================================================
+      const updateItemOvenAndTiming = (itemId, field, rawValue) => {
+        const computeNextItem = (item) => {
+          if (item.id !== itemId) return item;
+          if (field === "station") {
+            return { ...item, station: rawValue };
+          }
+          if (field === "ovenSlots") {
+            const parsedSlots = Math.max(0, Math.min(16, Math.round((parseFloat(rawValue) || 0) * 100) / 100));
+            return {
+              ...item,
+              ovenSlots: parsedSlots,
+              station: parsedSlots > 0 && item.station === "COLD" ? "PIZZA" : item.station
+            };
+          }
+          if (field === "cookTimeMins") {
+            const parsedCook = Math.max(0, Math.min(90, parseInt(rawValue, 10) || 0));
+            return {
+              ...item,
+              cookTimeMins: parsedCook,
+              station: parsedCook === 0 && item.ovenSlots === 0 ? "COLD" : item.station
+            };
+          }
+          if (field === "prepTimeMins") {
+            const parsedPrep = Math.max(0, Math.min(60, parseInt(rawValue, 10) || 0));
+            return { ...item, prepTimeMins: parsedPrep };
+          }
+          return item;
+        };
+
+        // 1. Update live menuItems (Storefront, POS & KDS)
+        setMenuItems(prev => prev.map(computeNextItem));
+
+        // 2. Sync any matching items in Customer/POS Shopping Bag
+        setCart(prev => prev.map(computeNextItem));
+
+        // 3. Sync any matching items in Active KDS Orders so oven slot math & wait quotes update immediately
+        setOrders(prev =>
+          prev.map(order => ({
+            ...order,
+            items: order.items.map(computeNextItem)
+          }))
+        );
+      };
+
+      // Stepper helper for +/- buttons on ovenSlots, cookTimeMins, prepTimeMins
+      const adjustItemOvenAndTimingDelta = (itemId, field, delta) => {
+        const target = menuItems.find(m => m.id === itemId);
+        if (!target) return;
+        const currentVal = Number(target[field] || 0);
+        const nextVal = field === "ovenSlots"
+          ? Math.max(0, Math.round((currentVal + delta) * 100) / 100)
+          : Math.max(0, Math.round(currentVal + delta));
+        updateItemOvenAndTiming(itemId, field, nextVal);
+      };
+
+      // Batch apply oven slots, cook time, or prep time across a category or all oven items
+      const applyBatchOvenTiming = (mode, targetCategory = "ALL") => {
+        const matchesFilter = (item) => {
+          if (targetCategory === "ALL") return true;
+          if (targetCategory === "OVEN_ONLY") return item.ovenSlots > 0 || item.cookTimeMins > 0 || item.station === "PIZZA" || item.station === "HOT_PREP";
+          return item.category === targetCategory;
+        };
+
+        const transformItem = (item) => {
+          if (!matchesFilter(item)) return item;
+          if (mode === "SET_SLOTS") {
+            const slots = Math.max(0, Math.min(16, Math.round((parseFloat(batchOvenSlotsVal) || 0) * 100) / 100));
+            return { ...item, ovenSlots: slots };
+          }
+          if (mode === "SET_COOK") {
+            const cook = Math.max(0, Math.min(90, parseInt(batchCookMinsVal, 10) || 0));
+            return { ...item, cookTimeMins: cook };
+          }
+          if (mode === "SET_PREP") {
+            const prep = Math.max(0, Math.min(60, parseInt(batchPrepMinsVal, 10) || 0));
+            return { ...item, prepTimeMins: prep };
+          }
+          if (mode === "COOK_PLUS_2") {
+            if (item.cookTimeMins <= 0 && item.ovenSlots <= 0) return item;
+            return { ...item, cookTimeMins: Math.min(90, item.cookTimeMins + 2) };
+          }
+          if (mode === "COOK_MINUS_2") {
+            if (item.cookTimeMins <= 0 && item.ovenSlots <= 0) return item;
+            return { ...item, cookTimeMins: Math.max(1, item.cookTimeMins - 2) };
+          }
+          return item;
+        };
+
+        setMenuItems(prev => prev.map(transformItem));
+        setCart(prev => prev.map(transformItem));
+        setOrders(prev =>
+          prev.map(order => ({
+            ...order,
+            items: order.items.map(transformItem)
+          }))
+        );
+      };
+
+      // Reset all built-in menu items back to factory default oven slots & cook times
+      const resetAllOvenTimingToDefaults = () => {
+        const defaultsMap = {};
+        BUCKYS_MENU.forEach(item => {
+          defaultsMap[item.id] = {
+            prepTimeMins: item.prepTimeMins,
+            cookTimeMins: item.cookTimeMins,
+            ovenSlots: item.ovenSlots,
+            station: item.station
+          };
+        });
+
+        const restoreDefaults = (item) => {
+          const def = defaultsMap[item.id];
+          if (!def) return item;
+          return { ...item, ...def };
+        };
+
+        setMenuItems(prev => prev.map(restoreDefaults));
+        setCart(prev => prev.map(restoreDefaults));
+        setOrders(prev =>
+          prev.map(order => ({
+            ...order,
+            items: order.items.map(restoreDefaults)
+          }))
+        );
       };
 
       // Quick summary counts for header & KDS banner
@@ -2154,6 +2289,14 @@
 
                     <div className="flex flex-wrap items-center gap-2">
                       <button
+                        onClick={() => setIsOvenTimingModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-extrabold border-2 border-bucky-charcoal vintage-shadow-sm"
+                        title="Customize deck oven slots, bake time (mins), and prep time for every menu item"
+                      >
+                        🔥 Oven Slots & Cook Times
+                      </button>
+
+                      <button
                         onClick={() => setIsAddCustomModalOpen(true)}
                         className="px-3.5 py-1.5 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
                         title="Create a new custom menu item or kitchen inventory ingredient"
@@ -2248,6 +2391,7 @@
                       const is86 = inv.eightySixed || inv.stock === 0;
                       const isLow = !is86 && inv.stock <= inv.lowThreshold;
                       const committedInQueue = activeTicketInventoryUsage[inv.id] || 0;
+                      const linkedMenuItem = inv.isMenuItem ? menuItems.find(m => m.id === inv.id) : null;
 
                       return (
                         <div
@@ -2383,6 +2527,69 @@
                                 </span>
                               </div>
                             </div>
+
+                            {/* Inline Oven Slots, Cook Time & Prep Time Editor for Menu Items */}
+                            {linkedMenuItem && (
+                              <div className="mt-2 bg-bucky-parchment border border-bucky-charcoal p-2 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-condensed uppercase text-[10px] tracking-wider font-bold text-bucky-charcoal">
+                                    🔥 Oven Slots & Bake Timing
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsOvenTimingModalOpen(true)}
+                                    className="text-[10px] font-condensed uppercase text-bucky-red hover:underline font-bold"
+                                  >
+                                    All Items →
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1.5 text-center">
+                                  <div className="bg-white border border-stone-300 p-1">
+                                    <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
+                                      Deck Slots
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.05"
+                                      min="0"
+                                      max="16"
+                                      value={linkedMenuItem.ovenSlots}
+                                      onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "ovenSlots", e.target.value)}
+                                      className="w-full text-center font-display font-black text-xs text-bucky-red bg-transparent focus:outline-none"
+                                      title="Deck oven slots required per unit (e.g. 1.0, 0.75, 0.25, 0)"
+                                    />
+                                  </div>
+                                  <div className="bg-white border border-stone-300 p-1">
+                                    <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
+                                      Bake (m)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="90"
+                                      value={linkedMenuItem.cookTimeMins}
+                                      onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "cookTimeMins", e.target.value)}
+                                      className="w-full text-center font-display font-black text-xs text-bucky-charcoal bg-transparent focus:outline-none"
+                                      title="Oven cook / bake time in minutes"
+                                    />
+                                  </div>
+                                  <div className="bg-white border border-stone-300 p-1">
+                                    <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
+                                      Prep (m)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="60"
+                                      value={linkedMenuItem.prepTimeMins}
+                                      onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "prepTimeMins", e.target.value)}
+                                      className="w-full text-center font-display font-black text-xs text-stone-700 bg-transparent focus:outline-none"
+                                      title="Make-line prep / stretching time in minutes"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Quick Kitchen Action Buttons */}
@@ -2431,26 +2638,34 @@
 
               {/* KITCHEN CONSTRAINT TUNING BAR */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <div className="bg-white p-4 border-2 border-bucky-charcoal vintage-shadow">
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
-                      🔥 30-Yr-Old Deck Oven Capacity
-                    </span>
-                    <span className="font-display font-black text-sm text-bucky-red">
-                      {kitchenConfig.maxOvenSlots} Pie Slots
-                    </span>
+                <div className="bg-white p-4 border-2 border-bucky-charcoal vintage-shadow flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                        🔥 30-Yr-Old Deck Oven Capacity
+                      </span>
+                      <span className="font-display font-black text-sm text-bucky-red">
+                        {kitchenConfig.maxOvenSlots} Pie Slots
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="4"
+                      max="16"
+                      value={kitchenConfig.maxOvenSlots}
+                      onChange={e => setKitchenConfig({ ...kitchenConfig, maxOvenSlots: Number(e.target.value) })}
+                      className="w-full accent-bucky-red"
+                    />
+                    <p className="text-[11px] text-stone-600 mt-1">
+                      16" Round = 1.0 slot • 8x10 Detroit = 0.75 slot. Dial down if an oven deck needs a heat recovery break.
+                    </p>
                   </div>
-                  <input
-                    type="range"
-                    min="4"
-                    max="16"
-                    value={kitchenConfig.maxOvenSlots}
-                    onChange={e => setKitchenConfig({ ...kitchenConfig, maxOvenSlots: Number(e.target.value) })}
-                    className="w-full accent-bucky-red"
-                  />
-                  <p className="text-[11px] text-stone-600 mt-1">
-                    16" Round = 1.0 slot • 8x10 Detroit = 0.75 slot. Dial down if an oven deck needs a heat recovery break.
-                  </p>
+                  <button
+                    onClick={() => setIsOvenTimingModalOpen(true)}
+                    className="mt-2.5 w-full py-1.5 bg-amber-100 hover:bg-amber-200 text-bucky-charcoal font-condensed uppercase tracking-wider text-[11px] font-bold border border-bucky-charcoal transition"
+                  >
+                    ⚙️ Customize Per-Item Oven Slots & Cook Times →
+                  </button>
                 </div>
 
                 <div className="bg-white p-4 border-2 border-bucky-charcoal vintage-shadow">
@@ -2856,85 +3071,121 @@
                           <th className="py-2.5 px-3 text-center">Daily Par</th>
                           <th className="py-2.5 px-3 text-center">Low Alert ≤</th>
                           <th className="py-2.5 px-3 text-center">Tray Size</th>
+                          <th className="py-2.5 px-3 text-center">🔥 Deck Slots</th>
+                          <th className="py-2.5 px-3 text-center">⏱️ Bake (m)</th>
                           <th className="py-2.5 px-3 text-center">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-200">
-                        {draftInventory.map(item => (
-                          <tr
-                            key={item.id}
-                            className={item.eightySixed || item.stock === 0 ? "bg-red-50/70" : "hover:bg-bucky-cream/60"}
-                          >
-                            <td className="py-2.5 px-3">
-                              <div className="flex items-center gap-2">
-                                <span className={`font-condensed uppercase text-[10px] px-1.5 py-0.5 font-bold ${
-                                  item.category === "DOUGH"
-                                    ? "bg-bucky-charcoal text-white"
-                                    : "bg-stone-200 text-bucky-charcoal"
-                                }`}>
-                                  {item.category}
-                                </span>
-                                <span className="font-display font-bold text-sm text-bucky-charcoal">
-                                  {item.name}
-                                </span>
-                                <span className="text-stone-400 text-[11px]">({item.unit})</span>
-                              </div>
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <input
-                                type="number"
-                                min="0"
-                                max="999"
-                                value={item.eightySixed ? 0 : item.stock}
-                                onChange={e => updateDraftInventoryField(item.id, "stock", e.target.value)}
-                                className="w-20 px-2 py-1 text-center font-display font-black text-sm bg-bucky-cream border-2 border-bucky-charcoal"
-                              />
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <input
-                                type="number"
-                                min="1"
-                                max="999"
-                                value={item.dailyPar}
-                                onChange={e => updateDraftInventoryField(item.id, "dailyPar", e.target.value)}
-                                className="w-20 px-2 py-1 text-center font-bold bg-white border border-stone-400"
-                              />
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <input
-                                type="number"
-                                min="1"
-                                max="99"
-                                value={item.lowThreshold}
-                                onChange={e => updateDraftInventoryField(item.id, "lowThreshold", e.target.value)}
-                                className="w-16 px-2 py-1 text-center font-bold bg-white border border-stone-400"
-                              />
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <input
-                                type="number"
-                                min="1"
-                                max="99"
-                                value={item.traySize}
-                                onChange={e => updateDraftInventoryField(item.id, "traySize", e.target.value)}
-                                className="w-16 px-2 py-1 text-center font-bold bg-white border border-stone-400"
-                              />
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <button
-                                type="button"
-                                onClick={() => updateDraftInventoryField(item.id, "eightySixed", !item.eightySixed)}
-                                className={`px-2.5 py-1 font-condensed uppercase text-[11px] font-bold border border-bucky-charcoal ${
-                                  item.eightySixed || item.stock === 0
-                                    ? "bg-bucky-red text-white"
-                                    : "bg-emerald-100 text-emerald-900"
-                                }`}
-                              >
-                                {item.eightySixed || item.stock === 0 ? "⛔ 86'D" : "✓ ACTIVE"}
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {draftInventory.map(item => {
+                          const linkedMenu = item.isMenuItem ? menuItems.find(m => m.id === item.id) : null;
+                          return (
+                            <tr
+                              key={item.id}
+                              className={item.eightySixed || item.stock === 0 ? "bg-red-50/70" : "hover:bg-bucky-cream/60"}
+                            >
+                              <td className="py-2.5 px-3">
+                                <div className="flex items-center gap-2">
+                                  <span className={`font-condensed uppercase text-[10px] px-1.5 py-0.5 font-bold ${
+                                    item.category === "DOUGH"
+                                      ? "bg-bucky-charcoal text-white"
+                                      : "bg-stone-200 text-bucky-charcoal"
+                                  }`}>
+                                    {item.category}
+                                  </span>
+                                  <span className="font-display font-bold text-sm text-bucky-charcoal">
+                                    {item.name}
+                                  </span>
+                                  <span className="text-stone-400 text-[11px]">({item.unit})</span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="999"
+                                  value={item.eightySixed ? 0 : item.stock}
+                                  onChange={e => updateDraftInventoryField(item.id, "stock", e.target.value)}
+                                  className="w-20 px-2 py-1 text-center font-display font-black text-sm bg-bucky-cream border-2 border-bucky-charcoal"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="999"
+                                  value={item.dailyPar}
+                                  onChange={e => updateDraftInventoryField(item.id, "dailyPar", e.target.value)}
+                                  className="w-16 px-2 py-1 text-center font-bold bg-white border border-stone-400"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="99"
+                                  value={item.lowThreshold}
+                                  onChange={e => updateDraftInventoryField(item.id, "lowThreshold", e.target.value)}
+                                  className="w-14 px-2 py-1 text-center font-bold bg-white border border-stone-400"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="99"
+                                  value={item.traySize}
+                                  onChange={e => updateDraftInventoryField(item.id, "traySize", e.target.value)}
+                                  className="w-14 px-2 py-1 text-center font-bold bg-white border border-stone-400"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {linkedMenu ? (
+                                  <input
+                                    type="number"
+                                    step="0.05"
+                                    min="0"
+                                    max="16"
+                                    value={linkedMenu.ovenSlots}
+                                    onChange={e => updateItemOvenAndTiming(linkedMenu.id, "ovenSlots", e.target.value)}
+                                    className="w-16 px-1.5 py-1 text-center font-display font-black text-xs text-bucky-red bg-amber-50 border border-bucky-charcoal"
+                                    title="Deck oven slots required per unit"
+                                  />
+                                ) : (
+                                  <span className="text-stone-400 text-[11px]">—</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {linkedMenu ? (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="90"
+                                    value={linkedMenu.cookTimeMins}
+                                    onChange={e => updateItemOvenAndTiming(linkedMenu.id, "cookTimeMins", e.target.value)}
+                                    className="w-16 px-1.5 py-1 text-center font-display font-black text-xs text-bucky-charcoal bg-amber-50 border border-bucky-charcoal"
+                                    title="Bake time in minutes"
+                                  />
+                                ) : (
+                                  <span className="text-stone-400 text-[11px]">—</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => updateDraftInventoryField(item.id, "eightySixed", !item.eightySixed)}
+                                  className={`px-2.5 py-1 font-condensed uppercase text-[11px] font-bold border border-bucky-charcoal ${
+                                    item.eightySixed || item.stock === 0
+                                      ? "bg-bucky-red text-white"
+                                      : "bg-emerald-100 text-emerald-900"
+                                  }`}
+                                >
+                                  {item.eightySixed || item.stock === 0 ? "⛔ 86'D" : "✓ ACTIVE"}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -3249,16 +3500,33 @@
                             <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
                               Oven Deck Slots
                             </label>
-                            <select
-                              value={newCustomInvOvenSlots}
-                              onChange={e => setNewCustomInvOvenSlots(e.target.value)}
-                              className="w-full px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold"
-                            >
-                              <option value="1.0">1.0 (16" Round)</option>
-                              <option value="0.75">0.75 (8x10 Det)</option>
-                              <option value="0.25">0.25 (Hot Side)</option>
-                              <option value="0">0 (Cold / Drink)</option>
-                            </select>
+                            <div className="space-y-1">
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                max="16"
+                                value={newCustomInvOvenSlots}
+                                onChange={e => setNewCustomInvOvenSlots(e.target.value)}
+                                className="w-full px-2 py-1.5 bg-bucky-cream border border-bucky-charcoal font-bold text-center"
+                              />
+                              <div className="flex items-center justify-center gap-1">
+                                {["0", "0.25", "0.75", "1.0", "1.5"].map(preset => (
+                                  <button
+                                    key={preset}
+                                    type="button"
+                                    onClick={() => setNewCustomInvOvenSlots(preset)}
+                                    className={`px-1 py-0.5 text-[9px] font-condensed font-bold border ${
+                                      String(newCustomInvOvenSlots) === preset
+                                        ? "bg-bucky-red text-white border-bucky-charcoal"
+                                        : "bg-white text-bucky-charcoal border-stone-300"
+                                    }`}
+                                  >
+                                    {preset}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                           </div>
                           <div className="col-span-2 sm:col-span-4">
                             <label className="block font-condensed uppercase text-[10px] font-bold text-stone-600 mb-1">
@@ -3310,6 +3578,366 @@
                   </button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* DEDICATED "CUSTOMIZE OVEN SLOTS & COOK TIMES" MANAGER MODAL       */}
+          {/* ================================================================= */}
+          {isOvenTimingModalOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-5xl w-full max-h-[92vh] flex flex-col vintage-shadow">
+                {/* Modal Header with Live Oven Telemetry */}
+                <div className="bg-bucky-charcoal text-white px-6 py-4 border-b-2 border-bucky-red flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <span className="font-condensed uppercase tracking-widest text-xs text-amber-400 font-bold">
+                      “Old Ovens, New Problems” • Per-Item Deck Oven & Bake Time Tuner
+                    </span>
+                    <h3 className="font-display font-black text-2xl">
+                      🔥 Customize Oven Slots, Cook Time & Prep Time
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-5">
+                    <div className="text-right">
+                      <span className="text-[10px] uppercase font-condensed text-stone-400 block">Active Deck Load</span>
+                      <span className="font-display font-black text-base text-amber-400">
+                        {currentOvenSlotsUsed.toFixed(2)} / {kitchenConfig.maxOvenSlots} slots
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] uppercase font-condensed text-stone-400 block">Live Wait Quote</span>
+                      <span className="font-display font-black text-base text-emerald-400">
+                        ~{liveQuote.totalEstimatedMins}m ({liveQuote.readyTimeFormatted})
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setIsOvenTimingModalOpen(false)}
+                      className="text-stone-400 hover:text-white font-bold text-xl px-2"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* Batch / Category Controls & Recovery Bake Bar */}
+                <div className="bg-bucky-parchment px-6 py-3.5 border-b-2 border-bucky-charcoal space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    {/* Quick Deck Recovery Adjustments */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-condensed uppercase tracking-wider font-bold text-stone-700">
+                        Deck Heat Presets:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => applyBatchOvenTiming("COOK_PLUS_2", ovenTimingCategoryFilter)}
+                        className="px-3 py-1.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                        title="Add +2 minutes bake time when the 30-yr deck ovens need extra heat recovery"
+                      >
+                        🔥 +2m Bake Time ({ovenTimingCategoryFilter === "ALL" ? "All Oven Items" : ovenTimingCategoryFilter})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyBatchOvenTiming("COOK_MINUS_2", ovenTimingCategoryFilter)}
+                        className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-white font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                        title="Subtract -2 minutes bake time when decks are running hot"
+                      >
+                        ⚡ -2m Bake Time ({ovenTimingCategoryFilter === "ALL" ? "All Oven Items" : ovenTimingCategoryFilter})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetAllOvenTimingToDefaults}
+                        className="px-3 py-1.5 bg-white hover:bg-stone-200 text-bucky-charcoal font-condensed uppercase tracking-wider font-bold border border-bucky-charcoal"
+                        title="Restore all factory default oven slots, cook times, and prep times"
+                      >
+                        ↻ Reset Defaults
+                      </button>
+                    </div>
+
+                    {/* Batch Apply Custom Slots / Cook / Prep to Filtered View */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1 bg-white px-2 py-1 border border-bucky-charcoal">
+                        <span className="font-condensed uppercase text-[10px] font-bold text-stone-600">Slots:</span>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0"
+                          max="16"
+                          value={batchOvenSlotsVal}
+                          onChange={e => setBatchOvenSlotsVal(e.target.value)}
+                          className="w-14 px-1 py-0.5 text-center font-bold bg-bucky-cream border border-stone-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => applyBatchOvenTiming("SET_SLOTS", ovenTimingCategoryFilter)}
+                          className="px-2 py-0.5 bg-bucky-charcoal hover:bg-bucky-red text-white font-condensed uppercase text-[10px] font-bold"
+                        >
+                          Apply
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-white px-2 py-1 border border-bucky-charcoal">
+                        <span className="font-condensed uppercase text-[10px] font-bold text-stone-600">Bake(m):</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="90"
+                          value={batchCookMinsVal}
+                          onChange={e => setBatchCookMinsVal(e.target.value)}
+                          className="w-12 px-1 py-0.5 text-center font-bold bg-bucky-cream border border-stone-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => applyBatchOvenTiming("SET_COOK", ovenTimingCategoryFilter)}
+                          className="px-2 py-0.5 bg-bucky-charcoal hover:bg-bucky-red text-white font-condensed uppercase text-[10px] font-bold"
+                        >
+                          Apply
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-white px-2 py-1 border border-bucky-charcoal">
+                        <span className="font-condensed uppercase text-[10px] font-bold text-stone-600">Prep(m):</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="60"
+                          value={batchPrepMinsVal}
+                          onChange={e => setBatchPrepMinsVal(e.target.value)}
+                          className="w-12 px-1 py-0.5 text-center font-bold bg-bucky-cream border border-stone-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => applyBatchOvenTiming("SET_PREP", ovenTimingCategoryFilter)}
+                          className="px-2 py-0.5 bg-bucky-charcoal hover:bg-bucky-red text-white font-condensed uppercase text-[10px] font-bold"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Category Filter Pills & Search */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-300">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { id: "ALL", label: `All Menu Items (${menuItems.length})` },
+                        { id: "OVEN_ONLY", label: `🔥 Oven Items Only (${menuItems.filter(m => m.ovenSlots > 0 || m.cookTimeMins > 0).length})` },
+                        ...MENU_CATEGORIES.map(cat => ({
+                          id: cat,
+                          label: `${cat} (${menuItems.filter(m => m.category === cat).length})`
+                        }))
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setOvenTimingCategoryFilter(tab.id)}
+                          className={`px-2.5 py-1 font-condensed uppercase tracking-wider text-[11px] border transition ${
+                            ovenTimingCategoryFilter === tab.id
+                              ? "bg-bucky-charcoal text-white border-bucky-charcoal font-bold"
+                              : "bg-white text-bucky-charcoal border-bucky-charcoal hover:bg-bucky-cream"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="🔍 Filter items by name..."
+                      value={ovenTimingSearch}
+                      onChange={e => setOvenTimingSearch(e.target.value)}
+                      className="px-3 py-1 bg-white border-2 border-bucky-charcoal text-xs font-medium min-w-[200px]"
+                    />
+                  </div>
+                </div>
+
+                {/* Scrollable Per-Item Customization Table */}
+                <div className="p-6 overflow-y-auto flex-1">
+                  <div className="overflow-x-auto border-2 border-bucky-charcoal bg-white">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-bucky-charcoal text-white font-condensed uppercase tracking-wider text-[11px]">
+                          <th className="py-2.5 px-3">Menu Item & Category</th>
+                          <th className="py-2.5 px-3 text-center">Kitchen Station</th>
+                          <th className="py-2.5 px-3 text-center">👨‍🍳 Prep Time (mins)</th>
+                          <th className="py-2.5 px-3 text-center">⏱️ Cook / Bake Time (mins)</th>
+                          <th className="py-2.5 px-3 text-center">🔥 Deck Oven Slots Required</th>
+                          <th className="py-2.5 px-3 text-center">Quick Slot Presets</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-200">
+                        {menuItems
+                          .filter(item => {
+                            if (ovenTimingCategoryFilter === "OVEN_ONLY") {
+                              if (item.ovenSlots <= 0 && item.cookTimeMins <= 0) return false;
+                            } else if (ovenTimingCategoryFilter !== "ALL" && item.category !== ovenTimingCategoryFilter) {
+                              return false;
+                            }
+                            if (ovenTimingSearch.trim()) {
+                              const q = ovenTimingSearch.toLowerCase();
+                              return item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q);
+                            }
+                            return true;
+                          })
+                          .map(item => (
+                            <tr key={item.id} className="hover:bg-bucky-cream/70">
+                              <td className="py-2.5 px-3">
+                                <div className="font-display font-bold text-sm text-bucky-charcoal">
+                                  {item.name}
+                                </div>
+                                <div className="text-[11px] text-stone-500">
+                                  {item.category} • ${item.price.toFixed(2)}
+                                </div>
+                              </td>
+
+                              {/* Kitchen Station Selector */}
+                              <td className="py-2.5 px-3 text-center">
+                                <select
+                                  value={item.station || "PIZZA"}
+                                  onChange={e => updateItemOvenAndTiming(item.id, "station", e.target.value)}
+                                  className="px-2 py-1 bg-bucky-cream border border-bucky-charcoal font-condensed uppercase text-[11px] font-bold"
+                                >
+                                  <option value="PIZZA">🍕 PIZZA DECK</option>
+                                  <option value="HOT_PREP">🔥 HOT PREP</option>
+                                  <option value="COLD">🥗 COLD / EXPO</option>
+                                </select>
+                              </td>
+
+                              {/* Prep Time (mins) with -1 / +1 steppers */}
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustItemOvenAndTimingDelta(item.id, "prepTimeMins", -1)}
+                                    className="w-6 h-7 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="60"
+                                    value={item.prepTimeMins}
+                                    onChange={e => updateItemOvenAndTiming(item.id, "prepTimeMins", e.target.value)}
+                                    className="w-14 px-1.5 py-1 text-center font-display font-black text-sm bg-white border-2 border-bucky-charcoal"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustItemOvenAndTimingDelta(item.id, "prepTimeMins", 1)}
+                                    className="w-6 h-7 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Cook / Bake Time (mins) with -1 / +1 steppers */}
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustItemOvenAndTimingDelta(item.id, "cookTimeMins", -1)}
+                                    className="w-6 h-7 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="90"
+                                    value={item.cookTimeMins}
+                                    onChange={e => updateItemOvenAndTiming(item.id, "cookTimeMins", e.target.value)}
+                                    className="w-16 px-1.5 py-1 text-center font-display font-black text-sm bg-amber-50 text-bucky-charcoal border-2 border-bucky-charcoal"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustItemOvenAndTimingDelta(item.id, "cookTimeMins", 1)}
+                                    className="w-6 h-7 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Oven Deck Slots with -0.25 / +0.25 steppers & custom decimal input */}
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustItemOvenAndTimingDelta(item.id, "ovenSlots", -0.25)}
+                                    className="px-1.5 h-7 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed text-[10px] font-bold"
+                                    title="Decrease by 0.25 slot"
+                                  >
+                                    -.25
+                                  </button>
+                                  <input
+                                    type="number"
+                                    step="0.05"
+                                    min="0"
+                                    max="16"
+                                    value={item.ovenSlots}
+                                    onChange={e => updateItemOvenAndTiming(item.id, "ovenSlots", e.target.value)}
+                                    className="w-16 px-1.5 py-1 text-center font-display font-black text-sm bg-bucky-cream text-bucky-red border-2 border-bucky-charcoal"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => adjustItemOvenAndTimingDelta(item.id, "ovenSlots", 0.25)}
+                                    className="px-1.5 h-7 bg-stone-100 hover:bg-stone-200 border border-bucky-charcoal font-condensed text-[10px] font-bold"
+                                    title="Increase by 0.25 slot"
+                                  >
+                                    +.25
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Quick Slot Presets */}
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  {[
+                                    { label: "0", val: 0 },
+                                    { label: "0.25", val: 0.25 },
+                                    { label: "0.5", val: 0.5 },
+                                    { label: "0.75", val: 0.75 },
+                                    { label: "1.0", val: 1.0 },
+                                    { label: "1.5", val: 1.5 }
+                                  ].map(p => (
+                                    <button
+                                      key={p.label}
+                                      type="button"
+                                      onClick={() => updateItemOvenAndTiming(item.id, "ovenSlots", p.val)}
+                                      className={`px-1.5 py-1 font-condensed text-[10px] font-bold border transition ${
+                                        Number(item.ovenSlots) === p.val
+                                          ? "bg-bucky-red text-white border-bucky-charcoal"
+                                          : "bg-white hover:bg-stone-100 text-bucky-charcoal border-stone-300"
+                                      }`}
+                                    >
+                                      {p.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="bg-bucky-parchment px-6 py-4 border-t-2 border-bucky-charcoal flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-xs text-stone-600">
+                    All edits apply in real time to the Online Storefront, Counter POS, active KDS tickets, and live ready-time quotes.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsOvenTimingModalOpen(false)}
+                    className="px-6 py-2 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-widest text-sm font-bold border-2 border-bucky-charcoal vintage-shadow-sm"
+                  >
+                    ✓ Done Customizing Oven Slots & Cook Times
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
