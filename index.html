@@ -767,23 +767,127 @@
     ];
 
     // ============================================================================
-    // 2. KITCHEN CONSTRAINT & READY-TIME SCHEDULING ENGINE
+    // 2. STORE HOURS & KITCHEN READY-TIME SCHEDULING ENGINE
     //    ("Old Ovens, New Problems" — 30+ Year Old Deck Ovens Pacing Engine)
     // ============================================================================
-    function calculateKitchenQuote(activeOrders, cartItems, kitchenConfig) {
+    const DEFAULT_STORE_SETTINGS = {
+      masterMode: "OPEN", // "OPEN" (Force Open) | "CLOSED" (Force Closed / Paused) | "AUTO" (Follow Weekly Hours)
+      closedBannerMessage: "We are currently closed for online ordering. Check our store hours below or visit us during service!",
+      allowScheduledPreOrdersWhenClosed: false,
+      weeklyHours: [
+        { dayIndex: 1, key: "monday", label: "Monday", shortLabel: "Mon", isOpen: false, openTime: "12:00", closeTime: "20:00", note: "Resting the Ovens & Starter" },
+        { dayIndex: 2, key: "tuesday", label: "Tuesday", shortLabel: "Tue", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
+        { dayIndex: 3, key: "wednesday", label: "Wednesday", shortLabel: "Wed", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
+        { dayIndex: 4, key: "thursday", label: "Thursday", shortLabel: "Thu", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
+        { dayIndex: 5, key: "friday", label: "Friday", shortLabel: "Fri", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "Peak Dinner Rush" },
+        { dayIndex: 6, key: "saturday", label: "Saturday", shortLabel: "Sat", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "Peak Dinner Rush" },
+        { dayIndex: 0, key: "sunday", label: "Sunday", shortLabel: "Sun", isOpen: true, openTime: "12:00", closeTime: "19:00", note: "" }
+      ]
+    };
+
+    function formatTime24To12(time24) {
+      if (!time24 || typeof time24 !== "string" || !time24.includes(":")) return time24 || "";
+      const [hStr, mStr] = time24.split(":");
+      const h = parseInt(hStr, 10);
+      const m = mStr || "00";
+      if (Number.isNaN(h)) return time24;
+      const ampm = h >= 12 ? "PM" : "AM";
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}:${m} ${ampm}`;
+    }
+
+    function buildDateAtHHMM(baseDate, dayOffset, hhmm) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() + dayOffset);
+      const [hStr, mStr] = (hhmm || "12:00").split(":");
+      d.setHours(parseInt(hStr, 10) || 0, parseInt(mStr, 10) || 0, 0, 0);
+      return d;
+    }
+
+    function resolveNextOpeningAndServiceWindow(storeSettings, nowMs) {
+      const now = new Date(nowMs || Date.now());
+      const hoursList = storeSettings?.weeklyHours || DEFAULT_STORE_SETTINGS.weeklyHours;
+      const todaySchedule = hoursList.find(d => d.dayIndex === now.getDay()) || hoursList[0];
+
+      const todayOpenDate = buildDateAtHHMM(now, 0, todaySchedule.openTime || "12:00");
+      const todayCloseDate = buildDateAtHHMM(now, 0, todaySchedule.closeTime || "20:00");
+
+      // Case 1: Currently inside today's open operating window
+      if (todaySchedule.isOpen && now >= todayOpenDate && now < todayCloseDate) {
+        return {
+          now,
+          isCurrentlyWithinOpenHours: true,
+          nextOpeningDate: todayOpenDate,
+          serviceCloseDate: todayCloseDate,
+          targetDaySchedule: todaySchedule,
+          dayPrefixLabel: "Today"
+        };
+      }
+
+      // Case 2: Today is an open day and it is currently BEFORE today's opening time
+      if (todaySchedule.isOpen && now < todayOpenDate) {
+        return {
+          now,
+          isCurrentlyWithinOpenHours: false,
+          nextOpeningDate: todayOpenDate,
+          serviceCloseDate: todayCloseDate,
+          targetDaySchedule: todaySchedule,
+          dayPrefixLabel: "Today"
+        };
+      }
+
+      // Case 3: Past today's closing time or today is a closed day -> find next open day (offset 1..7)
+      for (let offset = 1; offset <= 7; offset++) {
+        const candDayIdx = (now.getDay() + offset) % 7;
+        const candSchedule = hoursList.find(d => d.dayIndex === candDayIdx);
+        if (candSchedule && candSchedule.isOpen) {
+          const nextOpen = buildDateAtHHMM(now, offset, candSchedule.openTime || "12:00");
+          const nextClose = buildDateAtHHMM(now, offset, candSchedule.closeTime || "20:00");
+          return {
+            now,
+            isCurrentlyWithinOpenHours: false,
+            nextOpeningDate: nextOpen,
+            serviceCloseDate: nextClose,
+            targetDaySchedule: candSchedule,
+            dayPrefixLabel: offset === 1 ? `Tomorrow (${candSchedule.shortLabel})` : candSchedule.shortLabel
+          };
+        }
+      }
+
+      // Fallback if all 7 days are toggled closed in settings
+      const fallbackOpen = buildDateAtHHMM(now, 1, todaySchedule.openTime || "12:00");
+      const fallbackClose = buildDateAtHHMM(now, 1, todaySchedule.closeTime || "20:00");
+      return {
+        now,
+        isCurrentlyWithinOpenHours: false,
+        nextOpeningDate: fallbackOpen,
+        serviceCloseDate: fallbackClose,
+        targetDaySchedule: todaySchedule,
+        dayPrefixLabel: "Tomorrow"
+      };
+    }
+
+    function calculateKitchenQuote(activeOrders, cartItems, kitchenConfig, storeSettings = DEFAULT_STORE_SETTINGS, nowMs = Date.now()) {
       const { maxOvenSlots, makeLineStaff, qualityBufferMins } = kitchenConfig;
+      const win = resolveNextOpeningAndServiceWindow(storeSettings, nowMs);
 
       let queuedOvenSlotMinutes = 0;
       let queuedPrepMinutes = 0;
+      let preOpenQueuedOvenSlotMinutes = 0;
+      let preOpenQueuedPrepMinutes = 0;
 
       activeOrders.forEach(order => {
-        if (order.status === "READY" || order.status === "PICKED_UP") return;
+        if (order.status === "READY" || order.status === "PICKED_UP" || order.refunded) return;
 
         order.items.forEach(item => {
           const qty = item.quantity || 1;
           if (order.status === "QUEUED") {
             queuedPrepMinutes += item.prepTimeMins * qty;
             queuedOvenSlotMinutes += (item.ovenSlots * item.cookTimeMins) * qty;
+            if (order.queuedForOpen) {
+              preOpenQueuedPrepMinutes += item.prepTimeMins * qty;
+              preOpenQueuedOvenSlotMinutes += (item.ovenSlots * item.cookTimeMins) * qty;
+            }
           } else if (order.status === "MAKE_LINE") {
             queuedPrepMinutes += (item.prepTimeMins * 0.5) * qty;
             queuedOvenSlotMinutes += (item.ovenSlots * item.cookTimeMins) * qty;
@@ -820,12 +924,47 @@
       const ovenBatchesNeeded = Math.max(1, Math.ceil(cartOvenSlotsRequired / Math.max(1, maxOvenSlots)));
       const totalCookDuration = maxSingleItemCookMins * ovenBatchesNeeded;
 
-      const totalEstimatedMins = makeLineDelay + ovenBacklogDelay + totalCookDuration + qualityBufferMins;
+      // Pure real-time kitchen queue + prep + bake duration
+      const kitchenQueueAndBakeMins = makeLineDelay + ovenBacklogDelay + totalCookDuration + qualityBufferMins;
 
-      const readyTimestamp = new Date(Date.now() + totalEstimatedMins * 60000);
+      let readyTimestamp;
+      if (win.isCurrentlyWithinOpenHours) {
+        // Store is currently OPEN within operating hours: next available time is based on current queue & real-time data
+        readyTimestamp = new Date(win.now.getTime() + kitchenQueueAndBakeMins * 60000);
+      } else {
+        // Store is before opening time (or after close): pickup ready time is NO EARLIER than the next opening time,
+        // plus any pre-open orders already queued for opening (and if we are minutes away from open, never earlier than now + kitchenQueueAndBakeMins)
+        const preOpenQueueDelayMins =
+          Math.ceil(preOpenQueuedPrepMinutes / Math.max(1, makeLineStaff)) +
+          Math.floor(preOpenQueuedOvenSlotMinutes / Math.max(1, maxOvenSlots)) +
+          (cartItems.length > 0 ? (ovenBatchesNeeded - 1) * maxSingleItemCookMins : 0);
+
+        const openingFloorMs = win.nextOpeningDate.getTime() + preOpenQueueDelayMins * 60000;
+        const liveFromNowMs = win.now.getTime() + kitchenQueueAndBakeMins * 60000;
+        readyTimestamp = new Date(Math.max(openingFloorMs, liveFromNowMs));
+      }
+
+      const timeFormatted12 = readyTimestamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const readyTimeFormatted =
+        win.dayPrefixLabel === "Today"
+          ? timeFormatted12
+          : `${win.targetDaySchedule.shortLabel} ${timeFormatted12}`;
+
+      const minsUntilReady = Math.max(
+        kitchenQueueAndBakeMins,
+        Math.round((readyTimestamp.getTime() - win.now.getTime()) / 60000)
+      );
+
       return {
-        totalEstimatedMins,
-        readyTimeFormatted: readyTimestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        totalEstimatedMins: kitchenQueueAndBakeMins,
+        minsUntilReady,
+        readyTimestamp,
+        readyTimeFormatted,
+        isCurrentlyWithinOpenHours: win.isCurrentlyWithinOpenHours,
+        nextOpeningDate: win.nextOpeningDate,
+        serviceCloseDate: win.serviceCloseDate,
+        dayPrefixLabel: win.dayPrefixLabel,
+        nextOpeningFormatted: `${win.dayPrefixLabel} at ${formatTime24To12(win.targetDaySchedule.openTime)}`,
         breakdown: {
           makeLineDelay,
           ovenBacklogDelay,
@@ -834,6 +973,15 @@
           queuedOvenSlotsLoad: Math.min(100, Math.round((queuedOvenSlotMinutes / (maxOvenSlots * 15)) * 100))
         }
       };
+    }
+
+    function getInitialSeedPromisedTime(offsetMinsAfterEarliest) {
+      const win = resolveNextOpeningAndServiceWindow(DEFAULT_STORE_SETTINGS, Date.now());
+      const baseMs = Math.max(Date.now(), win.nextOpeningDate.getTime());
+      return new Date(baseMs + offsetMinsAfterEarliest * 60000).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit"
+      });
     }
 
     // ============================================================================
@@ -897,7 +1045,7 @@
         source: "ONLINE",
         status: "IN_OVEN",
         createdAt: new Date(Date.now() - 14 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        promisedTime: new Date(Date.now() + 6 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        promisedTime: getInitialSeedPromisedTime(6),
         estimatedMins: 20,
         paid: true,
         paymentMethod: "Stripe •••• 4242",
@@ -919,7 +1067,7 @@
         source: "POS",
         status: "MAKE_LINE",
         createdAt: new Date(Date.now() - 5 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        promisedTime: new Date(Date.now() + 18 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        promisedTime: getInitialSeedPromisedTime(18),
         estimatedMins: 23,
         paid: true,
         paymentMethod: "Stripe Apple Pay",
@@ -941,7 +1089,7 @@
         source: "ONLINE",
         status: "QUEUED",
         createdAt: new Date(Date.now() - 1 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        promisedTime: new Date(Date.now() + 26 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        promisedTime: getInitialSeedPromisedTime(26),
         estimatedMins: 27,
         paid: true,
         paymentMethod: "Stripe •••• 8819",
@@ -1017,32 +1165,6 @@
         ]
       }
     ];
-
-    const DEFAULT_STORE_SETTINGS = {
-      masterMode: "OPEN", // "OPEN" (Force Open) | "CLOSED" (Force Closed / Paused) | "AUTO" (Follow Weekly Hours)
-      closedBannerMessage: "We are currently closed for online ordering. Check our store hours below or visit us during service!",
-      allowScheduledPreOrdersWhenClosed: false,
-      weeklyHours: [
-        { dayIndex: 1, key: "monday", label: "Monday", shortLabel: "Mon", isOpen: false, openTime: "12:00", closeTime: "20:00", note: "Resting the Ovens & Starter" },
-        { dayIndex: 2, key: "tuesday", label: "Tuesday", shortLabel: "Tue", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
-        { dayIndex: 3, key: "wednesday", label: "Wednesday", shortLabel: "Wed", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
-        { dayIndex: 4, key: "thursday", label: "Thursday", shortLabel: "Thu", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
-        { dayIndex: 5, key: "friday", label: "Friday", shortLabel: "Fri", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "Peak Dinner Rush" },
-        { dayIndex: 6, key: "saturday", label: "Saturday", shortLabel: "Sat", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "Peak Dinner Rush" },
-        { dayIndex: 0, key: "sunday", label: "Sunday", shortLabel: "Sun", isOpen: true, openTime: "12:00", closeTime: "19:00", note: "" }
-      ]
-    };
-
-    function formatTime24To12(time24) {
-      if (!time24 || typeof time24 !== "string" || !time24.includes(":")) return time24 || "";
-      const [hStr, mStr] = time24.split(":");
-      const h = parseInt(hStr, 10);
-      const m = mStr || "00";
-      if (Number.isNaN(h)) return time24;
-      const ampm = h >= 12 ? "PM" : "AM";
-      const h12 = h % 12 === 0 ? 12 : h % 12;
-      return `${h12}:${m} ${ampm}`;
-    }
 
     // ============================================================================
     // 4. BUCKY'S BRAND LOGO COMPONENT (Uses official buckysrealgoodpizza.com logo
@@ -1270,10 +1392,19 @@
       const stripeElementsRef = useRef(null);
       const stripeMountedElementRef = useRef(null);
 
-      // Compute real-time ready time quote whenever cart, active orders, or kitchen constraints change
+      // Real-time 15-second clock heartbeat so opening-time transitions & queue quotes stay live
+      const [clockTick, setClockTick] = useState(() => Date.now());
+      useEffect(() => {
+        const intervalId = setInterval(() => {
+          setClockTick(Date.now());
+        }, 15000);
+        return () => clearInterval(intervalId);
+      }, []);
+
+      // Compute real-time ready time quote (never earlier than next opening time; once open, based on live queue & real-time data)
       const liveQuote = useMemo(() => {
-        return calculateKitchenQuote(orders, cart, kitchenConfig);
-      }, [orders, cart, kitchenConfig]);
+        return calculateKitchenQuote(orders, cart, kitchenConfig, storeSettings, clockTick);
+      }, [orders, cart, kitchenConfig, storeSettings, clockTick]);
 
       // Calculate current oven slot usage right now
       const currentOvenSlotsUsed = useMemo(() => {
@@ -1433,7 +1564,7 @@
       // MASTER OPENED / CLOSED & STORE OPERATING HOURS ENGINE
       // ==========================================================================
       const storeStatusInfo = useMemo(() => {
-        const now = new Date();
+        const now = new Date(clockTick);
         const jsDay = now.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
         const hoursList = storeSettings?.weeklyHours || DEFAULT_STORE_SETTINGS.weeklyHours;
         const todaySchedule = hoursList.find(d => d.dayIndex === jsDay) || hoursList[0];
@@ -1452,15 +1583,38 @@
         const mode = storeSettings?.masterMode || "OPEN";
         const isStoreOpen = mode === "OPEN" ? true : mode === "CLOSED" ? false : isAutoOpenNow;
 
-        // Dynamically build 30-min pickup slots from today's store hours (or 12:00 PM - 8:00 PM fallback)
-        const slotStartMins = todaySchedule.isOpen ? Math.max(openMins + 30, 11 * 60) : 12 * 60;
-        const slotEndMins = todaySchedule.isOpen ? Math.max(slotStartMins + 30, closeMins) : 20 * 60;
+        // Build 15-min scheduled pickup slots starting NO EARLIER than liveQuote.readyTimestamp
+        // (which is >= nextOpeningDate before open, and = now + liveQueueMins once open)
+        const earliestReadyMs = liveQuote.readyTimestamp.getTime();
+        const nextOpenMs = liveQuote.nextOpeningDate.getTime();
+        const firstSlotFloorMs = Math.max(earliestReadyMs, nextOpenMs);
+        const fifteenMinMs = 15 * 60 * 1000;
+        // Round up to next 15-min slot boundary (unless already on an exact 15-min mark such as 12:00 PM opening)
+        const roundedStartMs =
+          firstSlotFloorMs % fifteenMinMs === 0
+            ? firstSlotFloorMs
+            : Math.ceil(firstSlotFloorMs / fifteenMinMs) * fifteenMinMs;
+
+        const closeBoundMs = Math.max(roundedStartMs + 30 * 60000, liveQuote.serviceCloseDate.getTime());
         const availableScheduleSlots = [];
-        for (let m = slotStartMins; m <= slotEndMins; m += 30) {
-          const hh = String(Math.floor(m / 60)).padStart(2, "0");
-          const mm = String(m % 60).padStart(2, "0");
-          const label12 = formatTime24To12(`${hh}:${mm}`);
-          availableScheduleSlots.push(label12);
+        const dayPrefix = liveQuote.nextOpenDayOffset === 0 ? "" : `${liveQuote.nextOpeningDaySchedule.shortLabel} `;
+
+        // Always include the exact earliest ready time as the first option if it precedes roundedStartMs
+        if (firstSlotFloorMs < roundedStartMs) {
+          const exactFirstStr = `${dayPrefix}${new Date(firstSlotFloorMs).toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit"
+          })}`;
+          availableScheduleSlots.push(exactFirstStr);
+        }
+
+        for (let t = roundedStartMs; t <= closeBoundMs; t += fifteenMinMs) {
+          const slotDate = new Date(t);
+          const time12 = slotDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+          const label = `${dayPrefix}${time12}`;
+          if (!availableScheduleSlots.includes(label)) {
+            availableScheduleSlots.push(label);
+          }
         }
 
         const todayHoursFormatted = todaySchedule.isOpen
@@ -1482,7 +1636,15 @@
             storeSettings?.closedBannerMessage ||
             DEFAULT_STORE_SETTINGS.closedBannerMessage
         };
-      }, [storeSettings, pickupTimingMode]);
+      }, [storeSettings, pickupTimingMode, clockTick, liveQuote]);
+
+      // Keep scheduledSlot synced so it is never earlier than the next available slot (opening time or live queue)
+      useEffect(() => {
+        const slots = storeStatusInfo.availableScheduleSlots;
+        if (slots && slots.length > 0 && !slots.includes(scheduledSlot)) {
+          setScheduledSlot(slots[0]);
+        }
+      }, [storeStatusInfo.availableScheduleSlots, scheduledSlot]);
 
       const setMasterStoreMode = (nextMode) => {
         setStoreSettings(prev => ({
@@ -2543,6 +2705,7 @@
           orderKitchenNote: orderKitchenNote.trim(),
           isRush: false,
           refunded: false,
+          queuedForOpen: !liveQuote.isCurrentlyWithinOpenHours,
           status: "QUEUED",
           createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           promisedTime: promised,
@@ -3009,17 +3172,27 @@
               <div className="flex items-center gap-3 font-condensed uppercase tracking-wider text-xs">
                 {activeView === "ONLINE" ? (
                   storeStatusInfo.isStoreOpen ? (
-                    <span>Estimated Pickup Ready Time: {liveQuote.readyTimeFormatted} (~{liveQuote.totalEstimatedMins}m)</span>
+                    <span>
+                      Next Available Pickup: <strong>{liveQuote.readyTimeFormatted}</strong>{" "}
+                      {liveQuote.isCurrentlyWithinOpenHours
+                        ? `(~${liveQuote.totalEstimatedMins}m Live Queue)`
+                        : `(Opens ${liveQuote.nextOpeningFormatted})`}
+                    </span>
                   ) : (
                     <span className="text-amber-300 font-bold">
                       {storeSettings.allowScheduledPreOrdersWhenClosed
-                        ? "📅 Accepting Scheduled Pre-Orders Only"
-                        : "⛔ Online Ordering Paused / Closed"}
+                        ? `📅 Pre-Orders Open — Next Available: ${liveQuote.readyTimeFormatted}`
+                        : `⛔ Closed — Next Available at Open: ${liveQuote.nextOpeningFormatted}`}
                     </span>
                   )
                 ) : (
                   <>
-                    <span>Live Oven Wait: ~{liveQuote.totalEstimatedMins}m ({liveQuote.readyTimeFormatted})</span>
+                    <span>
+                      Next Ready: <strong>{liveQuote.readyTimeFormatted}</strong>{" "}
+                      {liveQuote.isCurrentlyWithinOpenHours
+                        ? `(~${liveQuote.totalEstimatedMins}m Live Queue)`
+                        : `(Opens ${liveQuote.nextOpeningFormatted})`}
+                    </span>
                     <span className="hidden md:inline text-white/70">|</span>
                     <span className="hidden md:inline">
                       16" Dough: <strong>{roundDoughStock}</strong> • Detroit Pans: <strong>{detroitPanStock}</strong>
@@ -3437,13 +3610,17 @@
                     {storeStatusInfo.isStoreOpen ? (
                       <>
                         <span className="text-[11px] uppercase tracking-wider text-stone-500 block font-semibold">
-                          ASAP Pickup Ready By
+                          {liveQuote.isCurrentlyWithinOpenHours
+                            ? "Next Available Pickup (Live Queue)"
+                            : "Earliest Pickup (At Opening)"}
                         </span>
                         <span className="font-display font-black text-3xl text-bucky-charcoal">
                           {liveQuote.readyTimeFormatted}
                         </span>
                         <span className="text-xs font-bold text-bucky-red block mt-0.5">
-                          ~{liveQuote.totalEstimatedMins} Mins Est. Wait
+                          {liveQuote.isCurrentlyWithinOpenHours
+                            ? `~${liveQuote.totalEstimatedMins} Mins Live Kitchen Wait`
+                            : `Opens ${liveQuote.nextOpeningFormatted} (~${liveQuote.totalEstimatedMins}m prep/bake)`}
                         </span>
                       </>
                     ) : (
@@ -3452,10 +3629,10 @@
                           Store Currently Closed
                         </span>
                         <span className="font-display font-black text-xl text-bucky-charcoal block mt-0.5">
-                          {storeStatusInfo.todayHoursFormatted}
+                          Next Open: {liveQuote.nextOpeningFormatted}
                         </span>
                         <span className="text-[11px] font-semibold text-stone-600 block mt-0.5">
-                          {storeStatusInfo.todaySchedule.label} Hours
+                          {storeStatusInfo.todaySchedule.label}: {storeStatusInfo.todayHoursFormatted}
                         </span>
                       </>
                     )}
@@ -3865,7 +4042,7 @@
                               : "bg-bucky-cream text-bucky-charcoal border-stone-300"
                           }`}
                         >
-                          🔥 ASAP (~{liveQuote.totalEstimatedMins}m)
+                          🔥 Next Available ({liveQuote.readyTimeFormatted})
                         </button>
                         <button
                           onClick={() => setPickupTimingMode("SCHEDULED")}
@@ -3886,9 +4063,14 @@
                             onChange={e => setScheduledSlot(e.target.value)}
                             className="w-full px-3 py-2 bg-bucky-cream border-2 border-bucky-charcoal text-xs font-bold"
                           >
-                            {storeStatusInfo.availableScheduleSlots.map(slotLabel => (
+                            {storeStatusInfo.availableScheduleSlots.map((slotLabel, idx) => (
                               <option key={slotLabel} value={slotLabel}>
-                                Today at {slotLabel}
+                                {liveQuote.nextOpenDayOffset === 0 ? `Today at ${slotLabel}` : slotLabel}
+                                {idx === 0
+                                  ? liveQuote.isCurrentlyWithinOpenHours
+                                    ? " (Earliest — Live Queue)"
+                                    : " (Earliest — Next Opening)"
+                                  : ""}
                               </option>
                             ))}
                           </select>
@@ -3900,17 +4082,24 @@
                   {/* DYNAMIC PICKUP ESTIMATE CARD (HIDES PREP/BAKE/OVEN SLOTS ON CUSTOMER VIEW) */}
                   <div className="bg-bucky-parchment border-2 border-bucky-charcoal p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-condensed uppercase tracking-wider text-xs font-bold text-bucky-charcoal">
-                        {activeView === "ONLINE"
-                          ? pickupTimingMode === "SCHEDULED"
-                            ? "Scheduled Pickup Time"
-                            : "Estimated Pickup Ready Time"
-                          : "Live Deck Oven Promise"}
-                      </span>
-                      <span className="font-display font-black text-base text-bucky-red">
+                      <div>
+                        <span className="font-condensed uppercase tracking-wider text-xs font-bold text-bucky-charcoal block">
+                          {activeView === "ONLINE"
+                            ? pickupTimingMode === "SCHEDULED"
+                              ? "Scheduled Pickup Time"
+                              : "Next Available Pickup Ready Time"
+                            : "Live Deck Oven Promise"}
+                        </span>
+                        <span className="text-[11px] text-stone-600 font-semibold block">
+                          {liveQuote.isCurrentlyWithinOpenHours
+                            ? `Live real-time queue (~${liveQuote.totalEstimatedMins}m est. wait)`
+                            : `No earlier than next opening (${liveQuote.nextOpeningFormatted})`}
+                        </span>
+                      </div>
+                      <span className="font-display font-black text-base text-bucky-red text-right">
                         {pickupTimingMode === "SCHEDULED" && activeView === "ONLINE"
                           ? scheduledSlot
-                          : `${liveQuote.readyTimeFormatted} (~${liveQuote.totalEstimatedMins}m)`}
+                          : liveQuote.readyTimeFormatted}
                       </span>
                     </div>
                     {activeView === "POS" && (
