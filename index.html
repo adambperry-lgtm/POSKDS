@@ -39,10 +39,12 @@
     };
   </script>
   <style>
-    body {
+    html, body {
       font-family: 'DM Sans', sans-serif;
       background-color: #FAF6F0;
       color: #161413;
+      overflow-x: hidden;
+      max-width: 100%;
     }
     .font-display {
       font-family: 'Fraunces', Georgia, serif;
@@ -81,8 +83,8 @@
     }
   </style>
 </head>
-<body class="bg-vintage-paper text-bucky-charcoal min-h-screen selection:bg-bucky-red selection:text-white">
-  <div id="root"></div>
+<body class="bg-vintage-paper text-bucky-charcoal min-h-screen w-full max-w-full overflow-x-hidden selection:bg-bucky-red selection:text-white">
+  <div id="root" class="w-full max-w-full overflow-x-hidden"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useMemo, useRef } = React;
@@ -2531,7 +2533,7 @@
       }, [inventory, kdsInventoryFilter, kdsSearchQuery]);
 
       return (
-        <div className="min-h-screen flex flex-col bg-vintage-paper text-bucky-charcoal">
+        <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col bg-vintage-paper text-bucky-charcoal">
           {/* ================================================================= */}
           {/* TOP ANNOUNCEMENT RIBBON (MATCHING BUCKY'S ONLINE-FIRST MODEL)     */}
           {/* ================================================================= */}
@@ -3066,9 +3068,9 @@
           {/* VIEW 1 & 2: ONLINE ORDERING MENU & STAFF COUNTER POS              */}
           {/* ================================================================= */}
           {((activeView === "ONLINE" && onlineSubPage === "MENU") || activeView === "POS") && (
-            <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 overflow-x-hidden">
               {/* LEFT 8 COLS: MENU CATEGORIES & ITEMS */}
-              <div className="lg:col-span-8 space-y-6">
+              <div className="lg:col-span-8 min-w-0 space-y-6">
                 {/* POS Mode Header Banner */}
                 {activeView === "POS" && (
                   <div className="p-4 bg-bucky-charcoal text-white border-2 border-bucky-charcoal vintage-shadow-red flex flex-wrap items-center justify-between gap-4">
@@ -3098,12 +3100,12 @@
                 )}
 
                 {/* Category Navigation Pills (Vintage Signage Style) */}
-                <div className="flex gap-2 overflow-x-auto pb-2 border-b-2 border-bucky-charcoal">
+                <div className="flex flex-wrap gap-2 pb-2 border-b-2 border-bucky-charcoal">
                   {MENU_CATEGORIES.map(category => (
                     <button
                       key={category}
                       onClick={() => setSelectedCategory(category)}
-                      className={`px-4 py-2 font-condensed uppercase tracking-wider text-sm whitespace-nowrap transition border-2 ${
+                      className={`px-3.5 py-2 font-condensed uppercase tracking-wider text-xs sm:text-sm whitespace-nowrap transition border-2 ${
                         selectedCategory === category
                           ? "bg-bucky-red text-white border-bucky-charcoal vintage-shadow-sm font-bold"
                           : "bg-white text-bucky-charcoal border-bucky-charcoal hover:bg-bucky-parchment"
@@ -3217,7 +3219,7 @@
               </div>
 
               {/* RIGHT 4 COLS: TOAST-STYLE ORDER BAG & LIVE KITCHEN TIMING */}
-              <div className="lg:col-span-4">
+              <div className="lg:col-span-4 min-w-0">
                 <div className="bg-white border-2 border-bucky-charcoal p-5 sticky top-24 vintage-shadow space-y-5">
                   <div className="flex items-center justify-between border-b-2 border-bucky-charcoal pb-3">
                     <div>
