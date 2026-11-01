@@ -1018,6 +1018,32 @@
       }
     ];
 
+    const DEFAULT_STORE_SETTINGS = {
+      masterMode: "OPEN", // "OPEN" (Force Open) | "CLOSED" (Force Closed / Paused) | "AUTO" (Follow Weekly Hours)
+      closedBannerMessage: "We are currently closed for online ordering. Check our store hours below or visit us during service!",
+      allowScheduledPreOrdersWhenClosed: false,
+      weeklyHours: [
+        { dayIndex: 1, key: "monday", label: "Monday", shortLabel: "Mon", isOpen: false, openTime: "12:00", closeTime: "20:00", note: "Resting the Ovens & Starter" },
+        { dayIndex: 2, key: "tuesday", label: "Tuesday", shortLabel: "Tue", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
+        { dayIndex: 3, key: "wednesday", label: "Wednesday", shortLabel: "Wed", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
+        { dayIndex: 4, key: "thursday", label: "Thursday", shortLabel: "Thu", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "" },
+        { dayIndex: 5, key: "friday", label: "Friday", shortLabel: "Fri", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "Peak Dinner Rush" },
+        { dayIndex: 6, key: "saturday", label: "Saturday", shortLabel: "Sat", isOpen: true, openTime: "12:00", closeTime: "20:00", note: "Peak Dinner Rush" },
+        { dayIndex: 0, key: "sunday", label: "Sunday", shortLabel: "Sun", isOpen: true, openTime: "12:00", closeTime: "19:00", note: "" }
+      ]
+    };
+
+    function formatTime24To12(time24) {
+      if (!time24 || typeof time24 !== "string" || !time24.includes(":")) return time24 || "";
+      const [hStr, mStr] = time24.split(":");
+      const h = parseInt(hStr, 10);
+      const m = mStr || "00";
+      if (Number.isNaN(h)) return time24;
+      const ampm = h >= 12 ? "PM" : "AM";
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}:${m} ${ampm}`;
+    }
+
     // ============================================================================
     // 4. BUCKY'S BRAND LOGO COMPONENT (Uses official buckysrealgoodpizza.com logo
     //    with automatic fallback to custom retro typography emblem)
@@ -1133,6 +1159,12 @@
       const [redeemLoyaltyReward, setRedeemLoyaltyReward] = useState(false);
 
       const [printingOrder, setPrintingOrder] = useState(null);
+
+      // Master Store Opened/Closed & Weekly Operating Hours State (Synced across all tabs/devices)
+      const [storeSettings, setStoreSettings] = useState(
+        () => loadPersistedSharedState()?.storeSettings || DEFAULT_STORE_SETTINGS
+      );
+      const [isStoreHoursModalOpen, setIsStoreHoursModalOpen] = useState(false);
 
       const [onlineSubPage, setOnlineSubPage] = useState("MENU"); // "MENU" | "GUIDELINES" | "STORY" | "CATERING"
       const [selectedCategory, setSelectedCategory] = useState("Specials");
@@ -1305,6 +1337,9 @@
         if (Array.isArray(payload.nightlyArchive)) {
           setNightlyArchive(payload.nightlyArchive);
         }
+        if (payload.storeSettings) {
+          setStoreSettings(payload.storeSettings);
+        }
 
         setLastSyncTimestamp(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
         setSyncPulseActive(true);
@@ -1357,7 +1392,7 @@
         };
       }, []);
 
-      // Broadcast whenever orders, inventory, menuItems, or kitchenConfig change locally
+      // Broadcast whenever orders, inventory, menuItems, kitchenConfig, nightlyArchive, or storeSettings change locally
       useEffect(() => {
         prevOrderCountRef.current = orders.length;
         if (isApplyingRemoteSyncRef.current) return;
@@ -1369,7 +1404,8 @@
           inventory,
           menuItems,
           kitchenConfig,
-          nightlyArchive
+          nightlyArchive,
+          storeSettings
         };
 
         try {
@@ -1390,7 +1426,125 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         }).catch(() => {});
-      }, [orders, inventory, menuItems, kitchenConfig, nightlyArchive]);
+      }, [orders, inventory, menuItems, kitchenConfig, nightlyArchive, storeSettings]);
+
+      // ==========================================================================
+      // MASTER OPENED / CLOSED & STORE OPERATING HOURS ENGINE
+      // ==========================================================================
+      const storeStatusInfo = useMemo(() => {
+        const now = new Date();
+        const jsDay = now.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+        const hoursList = storeSettings?.weeklyHours || DEFAULT_STORE_SETTINGS.weeklyHours;
+        const todaySchedule = hoursList.find(d => d.dayIndex === jsDay) || hoursList[0];
+
+        const parseMins = (hhmm) => {
+          if (!hhmm || !hhmm.includes(":")) return 0;
+          const [h, m] = hhmm.split(":").map(x => parseInt(x, 10) || 0);
+          return h * 60 + m;
+        };
+
+        const nowMins = now.getHours() * 60 + now.getMinutes();
+        const openMins = parseMins(todaySchedule.openTime);
+        const closeMins = parseMins(todaySchedule.closeTime);
+        const isAutoOpenNow = Boolean(todaySchedule.isOpen && nowMins >= openMins && nowMins < closeMins);
+
+        const mode = storeSettings?.masterMode || "OPEN";
+        const isStoreOpen = mode === "OPEN" ? true : mode === "CLOSED" ? false : isAutoOpenNow;
+
+        // Dynamically build 30-min pickup slots from today's store hours (or 12:00 PM - 8:00 PM fallback)
+        const slotStartMins = todaySchedule.isOpen ? Math.max(openMins + 30, 11 * 60) : 12 * 60;
+        const slotEndMins = todaySchedule.isOpen ? Math.max(slotStartMins + 30, closeMins) : 20 * 60;
+        const availableScheduleSlots = [];
+        for (let m = slotStartMins; m <= slotEndMins; m += 30) {
+          const hh = String(Math.floor(m / 60)).padStart(2, "0");
+          const mm = String(m % 60).padStart(2, "0");
+          const label12 = formatTime24To12(`${hh}:${mm}`);
+          availableScheduleSlots.push(label12);
+        }
+
+        const todayHoursFormatted = todaySchedule.isOpen
+          ? `${formatTime24To12(todaySchedule.openTime)} – ${formatTime24To12(todaySchedule.closeTime)}`
+          : `Closed (${todaySchedule.note || "Day Off"})`;
+
+        const canPlaceOnlineOrder =
+          isStoreOpen || Boolean(storeSettings?.allowScheduledPreOrdersWhenClosed && pickupTimingMode === "SCHEDULED");
+
+        return {
+          mode,
+          isStoreOpen,
+          isAutoOpenNow,
+          todaySchedule,
+          todayHoursFormatted,
+          availableScheduleSlots,
+          canPlaceOnlineOrder,
+          closedBannerMessage:
+            storeSettings?.closedBannerMessage ||
+            DEFAULT_STORE_SETTINGS.closedBannerMessage
+        };
+      }, [storeSettings, pickupTimingMode]);
+
+      const setMasterStoreMode = (nextMode) => {
+        setStoreSettings(prev => ({
+          ...(prev || DEFAULT_STORE_SETTINGS),
+          masterMode: nextMode
+        }));
+      };
+
+      const updateStoreSettingsField = (field, value) => {
+        setStoreSettings(prev => ({
+          ...(prev || DEFAULT_STORE_SETTINGS),
+          [field]: value
+        }));
+      };
+
+      const updateDayScheduleField = (dayKey, field, value) => {
+        setStoreSettings(prev => {
+          const base = prev || DEFAULT_STORE_SETTINGS;
+          return {
+            ...base,
+            weeklyHours: (base.weeklyHours || DEFAULT_STORE_SETTINGS.weeklyHours).map(day =>
+              day.key === dayKey ? { ...day, [field]: value } : day
+            )
+          };
+        });
+      };
+
+      const applyBulkStoreHoursPreset = (presetType) => {
+        if (presetType === "RESET_DEFAULT") {
+          setStoreSettings(prev => ({
+            ...(prev || DEFAULT_STORE_SETTINGS),
+            weeklyHours: DEFAULT_STORE_SETTINGS.weeklyHours
+          }));
+          return;
+        }
+        if (presetType === "COPY_TUE_TO_WEEK") {
+          setStoreSettings(prev => {
+            const base = prev || DEFAULT_STORE_SETTINGS;
+            const tue = (base.weeklyHours || []).find(d => d.key === "tuesday") || {
+              openTime: "12:00",
+              closeTime: "20:00"
+            };
+            return {
+              ...base,
+              weeklyHours: (base.weeklyHours || []).map(d =>
+                d.key === "monday"
+                  ? d
+                  : { ...d, isOpen: true, openTime: tue.openTime, closeTime: tue.closeTime }
+              )
+            };
+          });
+          return;
+        }
+        if (presetType === "OPEN_ALL_7_DAYS") {
+          setStoreSettings(prev => {
+            const base = prev || DEFAULT_STORE_SETTINGS;
+            return {
+              ...base,
+              weeklyHours: (base.weeklyHours || []).map(d => ({ ...d, isOpen: true }))
+            };
+          });
+        }
+      };
 
       // Customer View Lock & Staff PIN Unlock Handlers
       const lockToCustomerMode = () => {
@@ -1426,6 +1580,7 @@
           makeLineStaff: 2,
           qualityBufferMins: 3
         });
+        setStoreSettings(DEFAULT_STORE_SETTINGS);
         setIsSyncLauncherOpen(false);
       };
 
@@ -2832,18 +2987,35 @@
           {/* ================================================================= */}
           {/* TOP ANNOUNCEMENT RIBBON (MATCHING BUCKY'S ONLINE-FIRST MODEL)     */}
           {/* ================================================================= */}
-          <div className="bg-bucky-red text-white text-xs py-2 px-4 border-b border-black/20">
+          <div className={`${storeStatusInfo.isStoreOpen ? "bg-bucky-red" : "bg-bucky-charcoal"} text-white text-xs py-2 px-4 border-b border-black/20 transition-colors`}>
             <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 font-medium">
-                <span className="font-condensed uppercase tracking-wider bg-black/25 px-2 py-0.5 rounded text-[11px]">
-                  🏆 Winner: Best Slice in NJ (Pizza Bowl 6)
+              <div className="flex flex-wrap items-center gap-2 font-medium">
+                <span
+                  className={`font-condensed uppercase tracking-wider px-2 py-0.5 rounded text-[11px] font-bold border ${
+                    storeStatusInfo.isStoreOpen
+                      ? "bg-emerald-900/90 text-emerald-100 border-emerald-400/50"
+                      : "bg-red-900 text-red-100 border-red-400/60"
+                  }`}
+                >
+                  {storeStatusInfo.isStoreOpen ? "🟢 OPEN FOR ORDERS" : "🔴 CURRENTLY CLOSED"}
                 </span>
-                <span className="hidden sm:inline">•</span>
-                <span>465 Main Street, Chatham, NJ 07928 • Online Ordering Only (No Phone Orders)</span>
+                <span className="font-condensed uppercase tracking-wider bg-black/25 px-2 py-0.5 rounded text-[11px]">
+                  Today ({storeStatusInfo.todaySchedule.shortLabel}): {storeStatusInfo.todayHoursFormatted}
+                </span>
+                <span className="hidden md:inline">•</span>
+                <span className="hidden md:inline">465 Main Street, Chatham, NJ 07928 • Online Ordering Only</span>
               </div>
               <div className="flex items-center gap-3 font-condensed uppercase tracking-wider text-xs">
                 {activeView === "ONLINE" ? (
-                  <span>Estimated Pickup Ready Time: {liveQuote.readyTimeFormatted} (~{liveQuote.totalEstimatedMins}m)</span>
+                  storeStatusInfo.isStoreOpen ? (
+                    <span>Estimated Pickup Ready Time: {liveQuote.readyTimeFormatted} (~{liveQuote.totalEstimatedMins}m)</span>
+                  ) : (
+                    <span className="text-amber-300 font-bold">
+                      {storeSettings.allowScheduledPreOrdersWhenClosed
+                        ? "📅 Accepting Scheduled Pre-Orders Only"
+                        : "⛔ Online Ordering Paused / Closed"}
+                    </span>
+                  )
                 ) : (
                   <>
                     <span>Live Oven Wait: ~{liveQuote.totalEstimatedMins}m ({liveQuote.readyTimeFormatted})</span>
@@ -2994,6 +3166,20 @@
                     </span>
                   </button>
                   <button
+                    onClick={() => setIsStoreHoursModalOpen(true)}
+                    title="Master Store Open/Closed Switch & Weekly Store Hours Settings"
+                    className={`px-2.5 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1.5 border ${
+                      storeStatusInfo.isStoreOpen
+                        ? "bg-emerald-900/90 hover:bg-emerald-800 text-emerald-100 border-emerald-500 font-bold"
+                        : "bg-red-900 hover:bg-red-800 text-red-100 border-red-400 font-bold animate-pulse"
+                    }`}
+                  >
+                    <span>{storeStatusInfo.isStoreOpen ? "🟢 Store: OPEN" : "🔴 Store: CLOSED"}</span>
+                    <span className="text-[10px] px-1 bg-black/30 rounded">
+                      {storeStatusInfo.mode === "AUTO" ? "🕒 AUTO" : "⚙️ HOURS"}
+                    </span>
+                  </button>
+                  <button
                     onClick={() => setIsStripeSettingsOpen(true)}
                     title="Configure Stripe Publishable Key & Payment Element Settings"
                     className={`px-2.5 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1 border ${
@@ -3052,6 +3238,51 @@
               </div>
             )}
           </header>
+
+          {/* ================================================================= */}
+          {/* STORE CLOSED / PAUSED MASTER ALERT BANNER                         */}
+          {/* ================================================================= */}
+          {!storeStatusInfo.isStoreOpen && (
+            <div className="bg-red-950 text-white border-b-4 border-bucky-red px-4 py-3.5 shadow-md">
+              <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3">
+                  <span className="text-2xl">⛔</span>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-display font-black text-base text-white">
+                        Bucky’s Chatham Kitchen Is Currently Closed for ASAP Online Orders
+                      </span>
+                      <span className="px-2 py-0.5 bg-bucky-red text-white font-condensed uppercase text-[10px] tracking-widest font-bold">
+                        {storeStatusInfo.mode === "CLOSED" ? "Master Override: Closed" : "Outside Store Hours"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-red-100 mt-0.5">
+                      {storeStatusInfo.closedBannerMessage} •{" "}
+                      <strong>Today ({storeStatusInfo.todaySchedule.label}): {storeStatusInfo.todayHoursFormatted}</strong>
+                    </p>
+                  </div>
+                </div>
+                {!isCustomerLocked && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMasterStoreMode("OPEN")}
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-emerald-400"
+                    >
+                      🟢 Force Open Now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsStoreHoursModalOpen(true)}
+                      className="px-3 py-1.5 bg-white text-bucky-charcoal hover:bg-bucky-cream font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                    >
+                      ⚙️ Store Hours & Status
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ================================================================= */}
           {/* REAL-TIME INCOMING TICKET BANNER (TRIGGERED ACROSS TABS/DEVICES)  */}
@@ -3178,20 +3409,42 @@
                     <span className="font-condensed uppercase tracking-widest text-xs font-bold text-bucky-red">
                       🔥 Live Chatham Kitchen Clock
                     </span>
-                    <span className="text-[11px] font-bold bg-emerald-100 text-emerald-900 px-2 py-0.5 border border-emerald-700">
-                      OPEN
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 border ${
+                        storeStatusInfo.isStoreOpen
+                          ? "bg-emerald-100 text-emerald-900 border-emerald-700"
+                          : "bg-red-100 text-red-900 border-red-700"
+                      }`}
+                    >
+                      {storeStatusInfo.isStoreOpen ? "OPEN" : "CLOSED"}
                     </span>
                   </div>
                   <div className="text-center py-2 bg-white border border-stone-300 mb-3">
-                    <span className="text-[11px] uppercase tracking-wider text-stone-500 block font-semibold">
-                      ASAP Pickup Ready By
-                    </span>
-                    <span className="font-display font-black text-3xl text-bucky-charcoal">
-                      {liveQuote.readyTimeFormatted}
-                    </span>
-                    <span className="text-xs font-bold text-bucky-red block mt-0.5">
-                      ~{liveQuote.totalEstimatedMins} Mins Est. Wait
-                    </span>
+                    {storeStatusInfo.isStoreOpen ? (
+                      <>
+                        <span className="text-[11px] uppercase tracking-wider text-stone-500 block font-semibold">
+                          ASAP Pickup Ready By
+                        </span>
+                        <span className="font-display font-black text-3xl text-bucky-charcoal">
+                          {liveQuote.readyTimeFormatted}
+                        </span>
+                        <span className="text-xs font-bold text-bucky-red block mt-0.5">
+                          ~{liveQuote.totalEstimatedMins} Mins Est. Wait
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-[11px] uppercase tracking-wider text-red-700 block font-bold">
+                          Store Currently Closed
+                        </span>
+                        <span className="font-display font-black text-xl text-bucky-charcoal block mt-0.5">
+                          {storeStatusInfo.todayHoursFormatted}
+                        </span>
+                        <span className="text-[11px] font-semibold text-stone-600 block mt-0.5">
+                          {storeStatusInfo.todaySchedule.label} Hours
+                        </span>
+                      </>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-center mb-2.5 text-[11px]">
                     <div className="bg-bucky-parchment border border-stone-300 py-1 px-2">
@@ -3619,13 +3872,11 @@
                             onChange={e => setScheduledSlot(e.target.value)}
                             className="w-full px-3 py-2 bg-bucky-cream border-2 border-bucky-charcoal text-xs font-bold"
                           >
-                            <option value="4:30 PM">Today at 4:30 PM</option>
-                            <option value="5:00 PM">Today at 5:00 PM</option>
-                            <option value="5:30 PM">Today at 5:30 PM (Peak)</option>
-                            <option value="6:00 PM">Today at 6:00 PM (Peak)</option>
-                            <option value="6:30 PM">Today at 6:30 PM</option>
-                            <option value="7:00 PM">Today at 7:00 PM</option>
-                            <option value="7:30 PM">Today at 7:30 PM</option>
+                            {storeStatusInfo.availableScheduleSlots.map(slotLabel => (
+                              <option key={slotLabel} value={slotLabel}>
+                                Today at {slotLabel}
+                              </option>
+                            ))}
                           </select>
                         </div>
                       )}
@@ -3999,13 +4250,31 @@
                   </div>
 
                   {activeView === "ONLINE" ? (
-                    <button
-                      disabled={cart.length === 0}
-                      onClick={() => setIsCheckoutOpen(true)}
-                      className="w-full py-3.5 bg-bucky-red hover:bg-bucky-darkred disabled:bg-stone-300 disabled:text-stone-500 disabled:border-stone-400 text-white font-condensed uppercase tracking-widest text-sm font-bold border-2 border-bucky-charcoal vintage-shadow transition"
-                    >
-                      Checkout & Fire to Kitchen (${cartTotal.toFixed(2)})
-                    </button>
+                    <div className="space-y-2">
+                      {!storeStatusInfo.canPlaceOnlineOrder && (
+                        <div className="p-2.5 bg-red-50 border-2 border-bucky-red text-xs text-bucky-red font-semibold leading-snug">
+                          ⛔ <strong>Store Currently Closed:</strong> {storeStatusInfo.closedBannerMessage}
+                          {storeSettings.allowScheduledPreOrdersWhenClosed && pickupTimingMode !== "SCHEDULED" && (
+                            <button
+                              type="button"
+                              onClick={() => setPickupTimingMode("SCHEDULED")}
+                              className="block mt-1 underline font-bold text-bucky-charcoal"
+                            >
+                              → Switch to “📅 Schedule Slot” to place a pre-order
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        disabled={cart.length === 0 || !storeStatusInfo.canPlaceOnlineOrder}
+                        onClick={() => setIsCheckoutOpen(true)}
+                        className="w-full py-3.5 bg-bucky-red hover:bg-bucky-darkred disabled:bg-stone-300 disabled:text-stone-500 disabled:border-stone-400 text-white font-condensed uppercase tracking-widest text-sm font-bold border-2 border-bucky-charcoal vintage-shadow transition"
+                      >
+                        {!storeStatusInfo.canPlaceOnlineOrder
+                          ? `⛔ Store Closed (${storeStatusInfo.todayHoursFormatted})`
+                          : `Checkout & Fire to Kitchen ($${cartTotal.toFixed(2)})`}
+                      </button>
+                    </div>
                   ) : (
                     <div className="space-y-2.5">
                       <input
@@ -4044,64 +4313,109 @@
           {activeView === "KDS" && (
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 space-y-6">
               {/* KDS HEADER BANNER */}
-              <div className="bg-bucky-charcoal text-white border-2 border-bucky-charcoal p-5 vintage-shadow-red flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
-                    Bucky’s Kitchen Pacing, Deck Oven & Dough Inventory Controller
-                  </span>
-                  <h2 className="font-display font-black text-2xl">
-                    “Old Ovens, New Problems” — Live KDS & Dough Tracker
-                  </h2>
-                </div>
-                <div className="flex flex-wrap items-center gap-6 text-right">
+              <div className="bg-bucky-charcoal text-white border-2 border-bucky-charcoal p-5 vintage-shadow-red space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <span className="text-xs text-stone-400 block">16" Round / Detroit / Grandma</span>
-                    <span className="font-display font-black text-xl text-white">
-                      {roundDoughStock} <span className="text-xs font-normal text-stone-400">Rnd</span> •{" "}
-                      {detroitPanStock} <span className="text-xs font-normal text-stone-400">Det</span> •{" "}
-                      {grandmaPanStock} <span className="text-xs font-normal text-stone-400">Gma</span>
+                    <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
+                      Bucky’s Kitchen Pacing, Deck Oven & Dough Inventory Controller
                     </span>
+                    <h2 className="font-display font-black text-2xl">
+                      “Old Ovens, New Problems” — Live KDS & Dough Tracker
+                    </h2>
                   </div>
-                  <div>
-                    <span className="text-xs text-stone-400 block">Current Online Wait Quote</span>
-                    <span className="font-display font-black text-xl text-emerald-400">
-                      ~{liveQuote.totalEstimatedMins} mins ({liveQuote.readyTimeFormatted})
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-stone-400 block">Active Deck Slots Used / Total</span>
-                    <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                      <span className="font-display font-black text-xl text-amber-400">
-                        {currentOvenSlotsUsed.toFixed(2)} /
+                  <div className="flex flex-wrap items-center gap-6 text-right">
+                    <div>
+                      <span className="text-xs text-stone-400 block">16" Round / Detroit / Grandma</span>
+                      <span className="font-display font-black text-xl text-white">
+                        {roundDoughStock} <span className="text-xs font-normal text-stone-400">Rnd</span> •{" "}
+                        {detroitPanStock} <span className="text-xs font-normal text-stone-400">Det</span> •{" "}
+                        {grandmaPanStock} <span className="text-xs font-normal text-stone-400">Gma</span>
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => adjustTotalOvenSlots(-1)}
-                        className="w-6 h-6 bg-stone-800 hover:bg-bucky-red text-white border border-stone-600 font-bold text-xs leading-none"
-                        title="Decrease total kitchen deck oven slots by 1"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        step="0.25"
-                        min="0.5"
-                        max="64"
-                        value={kitchenConfig.maxOvenSlots}
-                        onChange={e => setTotalOvenSlots(e.target.value)}
-                        className="w-16 px-1.5 py-0.5 text-center font-display font-black text-base text-amber-300 bg-stone-900 border border-amber-400/60 focus:outline-none focus:border-amber-300"
-                        title="Type total available deck oven slots"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => adjustTotalOvenSlots(1)}
-                        className="w-6 h-6 bg-stone-800 hover:bg-bucky-red text-white border border-stone-600 font-bold text-xs leading-none"
-                        title="Increase total kitchen deck oven slots by 1"
-                      >
-                        +
-                      </button>
-                      <span className="text-xs text-stone-400 font-condensed uppercase">slots</span>
                     </div>
+                    <div>
+                      <span className="text-xs text-stone-400 block">Current Online Wait Quote</span>
+                      <span className="font-display font-black text-xl text-emerald-400">
+                        ~{liveQuote.totalEstimatedMins} mins ({liveQuote.readyTimeFormatted})
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-stone-400 block">Active Deck Slots Used / Total</span>
+                      <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                        <span className="font-display font-black text-xl text-amber-400">
+                          {currentOvenSlotsUsed.toFixed(2)} /
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => adjustTotalOvenSlots(-1)}
+                          className="w-6 h-6 bg-stone-800 hover:bg-bucky-red text-white border border-stone-600 font-bold text-xs leading-none"
+                          title="Decrease total kitchen deck oven slots by 1"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0.5"
+                          max="64"
+                          value={kitchenConfig.maxOvenSlots}
+                          onChange={e => setTotalOvenSlots(e.target.value)}
+                          className="w-16 px-1.5 py-0.5 text-center font-display font-black text-base text-amber-300 bg-stone-900 border border-amber-400/60 focus:outline-none focus:border-amber-300"
+                          title="Type total available deck oven slots"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => adjustTotalOvenSlots(1)}
+                          className="w-6 h-6 bg-stone-800 hover:bg-bucky-red text-white border border-stone-600 font-bold text-xs leading-none"
+                          title="Increase total kitchen deck oven slots by 1"
+                        >
+                          +
+                        </button>
+                        <span className="text-xs text-stone-400 font-condensed uppercase">slots</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* MASTER STORE OPENED / CLOSED & STORE HOURS QUICK CONTROLLER BAR IN KDS */}
+                <div className="pt-3 border-t border-stone-700 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-condensed uppercase tracking-wider text-stone-400 font-bold">
+                      Master Store Status:
+                    </span>
+                    {[
+                      { id: "OPEN", label: "🟢 Force Open (Accepting Orders)", activeClass: "bg-emerald-700 text-white border-emerald-400" },
+                      { id: "CLOSED", label: "🔴 Force Closed / Pause Online", activeClass: "bg-bucky-red text-white border-red-300" },
+                      { id: "AUTO", label: `🕒 Auto by Store Hours (${storeStatusInfo.isAutoOpenNow ? "Open Now" : "Closed Now"})`, activeClass: "bg-amber-400 text-bucky-charcoal border-amber-200" }
+                    ].map(opt => {
+                      const isSel = storeStatusInfo.mode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setMasterStoreMode(opt.id)}
+                          className={`px-3 py-1 font-condensed uppercase tracking-wider text-xs font-bold border transition ${
+                            isSel
+                              ? opt.activeClass
+                              : "bg-stone-900 hover:bg-stone-800 text-stone-300 border-stone-700"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-stone-300 font-condensed uppercase tracking-wider text-[11px]">
+                      Today ({storeStatusInfo.todaySchedule.label}): <strong className="text-white">{storeStatusInfo.todayHoursFormatted}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsStoreHoursModalOpen(true)}
+                      className="px-3 py-1 bg-white hover:bg-bucky-cream text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-extrabold border border-stone-400"
+                    >
+                      ⚙️ Edit Store Hours & Closed Banner
+                    </button>
                   </div>
                 </div>
               </div>
@@ -6020,12 +6334,52 @@
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-condensed uppercase tracking-widest text-sm text-white font-bold">
-                  Hours of Operation
-                </h4>
-                <p className="text-stone-300"><strong>Tuesday – Saturday:</strong> 12:00 PM – 8:00 PM</p>
-                <p className="text-stone-300"><strong>Sunday:</strong> 12:00 PM – 7:00 PM</p>
-                <p className="text-stone-400"><strong>Monday:</strong> Closed (Resting the Ovens & Starter)</p>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-condensed uppercase tracking-widest text-sm text-white font-bold">
+                    Hours of Operation
+                  </h4>
+                  <span
+                    className={`px-1.5 py-0.5 font-condensed uppercase text-[10px] font-bold border ${
+                      storeStatusInfo.isStoreOpen
+                        ? "bg-emerald-900 text-emerald-200 border-emerald-500"
+                        : "bg-red-900 text-red-200 border-red-500"
+                    }`}
+                  >
+                    {storeStatusInfo.isStoreOpen ? "🟢 OPEN" : "🔴 CLOSED"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-[11px]">
+                  {(storeSettings?.weeklyHours || DEFAULT_STORE_SETTINGS.weeklyHours).map(day => {
+                    const isToday = day.dayIndex === storeStatusInfo.todaySchedule.dayIndex;
+                    return (
+                      <div
+                        key={day.key}
+                        className={`flex items-center justify-between gap-2 ${
+                          isToday ? "text-amber-300 font-bold" : day.isOpen ? "text-stone-300" : "text-stone-500"
+                        }`}
+                      >
+                        <span>
+                          {day.shortLabel}
+                          {isToday ? " (Today)" : ""}:
+                        </span>
+                        <span>
+                          {day.isOpen
+                            ? `${formatTime24To12(day.openTime)} – ${formatTime24To12(day.closeTime)}`
+                            : `Closed${day.note ? ` (${day.note})` : ""}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {!isCustomerLocked && (
+                  <button
+                    type="button"
+                    onClick={() => setIsStoreHoursModalOpen(true)}
+                    className="mt-1 px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-amber-300 font-condensed uppercase tracking-wider text-[11px] border border-stone-700"
+                  >
+                    ⚙️ Edit Store Hours & Open/Closed Status
+                  </button>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -8203,6 +8557,290 @@
                     className="py-2 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
                   >
                     Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* MASTER STORE OPENED / CLOSED & WEEKLY STORE HOURS SETTINGS MODAL  */}
+          {/* ================================================================= */}
+          {isStoreHoursModalOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-3xl w-full p-6 space-y-5 vintage-shadow max-h-[92vh] overflow-y-auto">
+                <div className="flex items-start justify-between border-b-2 border-bucky-charcoal pb-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
+                        465 Main St, Chatham NJ • Toast Master Store Availability
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 font-condensed uppercase text-[10px] tracking-wider font-bold border ${
+                          storeStatusInfo.isStoreOpen
+                            ? "bg-emerald-800 text-white border-emerald-950"
+                            : "bg-bucky-red text-white border-bucky-charcoal"
+                        }`}
+                      >
+                        {storeStatusInfo.isStoreOpen ? "🟢 LIVE STATUS: OPEN" : "🔴 LIVE STATUS: CLOSED"}
+                      </span>
+                    </div>
+                    <h3 className="font-display font-black text-2xl mt-1">
+                      ⚙️ Master Opened/Closed & Store Hours Settings
+                    </h3>
+                    <p className="text-xs text-stone-600 mt-0.5">
+                      Control whether Bucky’s Online Storefront is open or closed, customize the closed banner message, and configure daily operating hours. Changes sync live across all customer & staff screens.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsStoreHoursModalOpen(false)}
+                    className="text-stone-500 hover:text-bucky-charcoal font-bold text-lg px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* 1. MASTER STORE OPEN / CLOSED / AUTO SWITCH */}
+                <div className="bg-white border-2 border-bucky-charcoal p-4 space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-condensed uppercase tracking-wider font-bold text-sm text-bucky-charcoal">
+                      1. Master Store Opened / Closed Override
+                    </span>
+                    <span className="text-[11px] text-stone-600">
+                      Today ({storeStatusInfo.todaySchedule.label}): <strong>{storeStatusInfo.todayHoursFormatted}</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {[
+                      {
+                        id: "OPEN",
+                        title: "🟢 Master OPEN",
+                        subtitle: "Accepting online & POS orders right now regardless of clock",
+                        activeClass: "bg-emerald-800 text-white border-bucky-charcoal vintage-shadow-sm"
+                      },
+                      {
+                        id: "CLOSED",
+                        title: "🔴 Master CLOSED",
+                        subtitle: "Pause online ordering immediately (Sold Out / Kitchen Snooze / Closed)",
+                        activeClass: "bg-bucky-red text-white border-bucky-charcoal vintage-shadow-sm"
+                      },
+                      {
+                        id: "AUTO",
+                        title: "🕒 Auto by Store Hours",
+                        subtitle: `Follow weekly schedule below (Currently: ${storeStatusInfo.isAutoOpenNow ? "OPEN" : "CLOSED"})`,
+                        activeClass: "bg-bucky-charcoal text-white border-bucky-charcoal vintage-shadow-sm"
+                      }
+                    ].map(card => {
+                      const isSel = storeStatusInfo.mode === card.id;
+                      return (
+                        <button
+                          key={card.id}
+                          type="button"
+                          onClick={() => setMasterStoreMode(card.id)}
+                          className={`p-3 text-left border-2 transition flex flex-col justify-between ${
+                            isSel
+                              ? card.activeClass
+                              : "bg-bucky-cream hover:bg-bucky-parchment text-bucky-charcoal border-stone-300"
+                          }`}
+                        >
+                          <div className="font-display font-black text-base">{card.title}</div>
+                          <div className={`text-[11px] mt-1 leading-snug ${isSel ? "text-stone-100" : "text-stone-600"}`}>
+                            {card.subtitle}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. CLOSED BANNER MESSAGE & PRE-ORDER POLICY */}
+                <div className="bg-bucky-parchment border-2 border-bucky-charcoal p-4 space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="font-condensed uppercase tracking-wider font-bold text-sm text-bucky-charcoal">
+                      2. Customer Banner Message When Closed & Pre-Order Policy
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-bucky-charcoal">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(storeSettings?.allowScheduledPreOrdersWhenClosed)}
+                        onChange={e => updateStoreSettingsField("allowScheduledPreOrdersWhenClosed", e.target.checked)}
+                        className="accent-bucky-red w-4 h-4"
+                      />
+                      <span>Allow Scheduled Pre-Orders When Closed</span>
+                    </label>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={storeSettings?.closedBannerMessage || ""}
+                    onChange={e => updateStoreSettingsField("closedBannerMessage", e.target.value)}
+                    placeholder="Enter custom banner message shown to online guests when closed..."
+                    className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal text-xs font-medium"
+                  />
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-condensed uppercase text-[10px] text-stone-600 font-bold">
+                      Quick Presets:
+                    </span>
+                    {[
+                      {
+                        label: "🌙 Standard Closed",
+                        msg: "We are currently closed for online ordering. Check our store hours below or visit us during service!"
+                      },
+                      {
+                        label: "🍕 Sold Out of Dough",
+                        msg: "🔥 Sold out of our 72-hr cold-fermented sourdough for tonight! Thank you, Chatham — see you tomorrow!"
+                      },
+                      {
+                        label: "⏸️ 20m Oven Snooze",
+                        msg: "⏸️ Online ordering temporarily paused for ~20 mins so our 30-year-old deck ovens can catch up!"
+                      },
+                      {
+                        label: "🎄 Holiday Closure",
+                        msg: "🎄 Closed today for a family holiday — we look forward to firing pies for you when we reopen!"
+                      }
+                    ].map(p => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => updateStoreSettingsField("closedBannerMessage", p.msg)}
+                        className="px-2 py-1 bg-white hover:bg-stone-100 border border-bucky-charcoal font-condensed uppercase text-[10px] font-bold"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. WEEKLY STORE OPERATING HOURS SCHEDULE */}
+                <div className="bg-white border-2 border-bucky-charcoal p-4 space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
+                    <div>
+                      <span className="font-condensed uppercase tracking-wider font-bold text-sm text-bucky-charcoal block">
+                        3. Weekly Store Hours Schedule (Monday – Sunday)
+                      </span>
+                      <span className="text-[11px] text-stone-500">
+                        Updates website footer hours, live Auto Open/Close schedule, and scheduled pickup time slots.
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => applyBulkStoreHoursPreset("COPY_TUE_TO_WEEK")}
+                        className="px-2.5 py-1 bg-bucky-cream hover:bg-bucky-parchment border border-bucky-charcoal font-condensed uppercase text-[10px] font-bold"
+                        title="Copy Tuesday open/close times to Tuesday through Saturday"
+                      >
+                        📋 Copy Tue Hours to Tue–Sat
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyBulkStoreHoursPreset("OPEN_ALL_7_DAYS")}
+                        className="px-2.5 py-1 bg-bucky-cream hover:bg-bucky-parchment border border-bucky-charcoal font-condensed uppercase text-[10px] font-bold"
+                      >
+                        ✓ Open All 7 Days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyBulkStoreHoursPreset("RESET_DEFAULT")}
+                        className="px-2.5 py-1 bg-stone-200 hover:bg-stone-300 border border-bucky-charcoal font-condensed uppercase text-[10px] font-bold"
+                      >
+                        ↺ Reset Default Hours
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-stone-200">
+                    {(storeSettings?.weeklyHours || DEFAULT_STORE_SETTINGS.weeklyHours).map(day => {
+                      const isToday = day.dayIndex === storeStatusInfo.todaySchedule.dayIndex;
+                      return (
+                        <div
+                          key={day.key}
+                          className={`py-2.5 px-2 grid grid-cols-1 sm:grid-cols-12 items-center gap-2.5 ${
+                            isToday ? "bg-amber-50/80" : ""
+                          }`}
+                        >
+                          {/* Day Name */}
+                          <div className="sm:col-span-3 flex items-center gap-2">
+                            <span className="font-display font-bold text-sm text-bucky-charcoal">
+                              {day.label}
+                            </span>
+                            {isToday && (
+                              <span className="px-1.5 py-0.5 bg-bucky-red text-white font-condensed uppercase text-[9px] font-bold">
+                                TODAY
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Open / Closed Day Toggle */}
+                          <div className="sm:col-span-2">
+                            <button
+                              type="button"
+                              onClick={() => updateDayScheduleField(day.key, "isOpen", !day.isOpen)}
+                              className={`w-full py-1 px-2 font-condensed uppercase tracking-wider text-[11px] font-bold border transition ${
+                                day.isOpen
+                                  ? "bg-emerald-800 text-white border-bucky-charcoal"
+                                  : "bg-stone-300 text-stone-700 border-stone-400"
+                              }`}
+                            >
+                              {day.isOpen ? "✓ Open" : "✕ Closed"}
+                            </button>
+                          </div>
+
+                          {/* Open Time & Close Time Inputs */}
+                          {day.isOpen ? (
+                            <div className="sm:col-span-4 flex items-center gap-1.5">
+                              <input
+                                type="time"
+                                value={day.openTime}
+                                onChange={e => updateDayScheduleField(day.key, "openTime", e.target.value)}
+                                className="px-2 py-1 bg-bucky-cream border border-bucky-charcoal font-mono text-xs font-bold"
+                              />
+                              <span className="text-stone-500 font-bold">to</span>
+                              <input
+                                type="time"
+                                value={day.closeTime}
+                                onChange={e => updateDayScheduleField(day.key, "closeTime", e.target.value)}
+                                className="px-2 py-1 bg-bucky-cream border border-bucky-charcoal font-mono text-xs font-bold"
+                              />
+                            </div>
+                          ) : (
+                            <div className="sm:col-span-4 text-stone-500 italic text-[11px]">
+                              Closed all day ({formatTime24To12(day.openTime)} – {formatTime24To12(day.closeTime)} inactive)
+                            </div>
+                          )}
+
+                          {/* Day Note */}
+                          <div className="sm:col-span-3">
+                            <input
+                              type="text"
+                              placeholder="Optional note (e.g. Resting Ovens)"
+                              value={day.note || ""}
+                              onChange={e => updateDayScheduleField(day.key, "note", e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-stone-300 text-[11px]"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t-2 border-bucky-charcoal">
+                  <div className="text-xs text-stone-600">
+                    Current Effective Status:{" "}
+                    <strong className={storeStatusInfo.isStoreOpen ? "text-emerald-800" : "text-bucky-red"}>
+                      {storeStatusInfo.isStoreOpen ? "OPEN FOR ONLINE ORDERS" : "CLOSED FOR ASAP ONLINE ORDERS"}
+                    </strong>{" "}
+                    (Mode: <strong>{storeStatusInfo.mode}</strong>)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsStoreHoursModalOpen(false)}
+                    className="px-6 py-2.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-widest text-xs font-extrabold border-2 border-bucky-charcoal vintage-shadow-sm"
+                  >
+                    ✓ Save & Close Store Hours Settings
                   </button>
                 </div>
               </div>
