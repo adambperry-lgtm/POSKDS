@@ -102,6 +102,47 @@
     ];
 
     // ============================================================================
+    // 1A. TOAST POS PIZZA MODIFIER, HALF-AND-HALF TOPPINGS, PROMO & LOYALTY CATALOG
+    // ============================================================================
+    const TOAST_PIZZA_TOPPINGS = [
+      { id: "top-ezzo-pep", name: "Ezzo Cup & Char Pepperoni", price: 3.50, invId: "prep-ezzo-pep" },
+      { id: "top-sausage", name: "House Sweet Italian Sausage", price: 3.50, invId: "prep-sausage" },
+      { id: "top-mushrooms", name: "Roasted Cremini Mushrooms", price: 3.00, invId: "prep-mushrooms" },
+      { id: "top-hot-honey", name: "Mike's Hot Honey Drizzle", price: 2.00, invId: "prep-hot-honey" },
+      { id: "top-ricotta", name: "Whipped Lemon Ricotta Dollops", price: 3.00, invId: "prep-hot-honey" },
+      { id: "top-burrata", name: "Fresh Creamy Burrata", price: 4.50, invId: "prep-mozz-fresh" },
+      { id: "top-extra-mozz", name: "Extra Fresh Mozzarella", price: 3.00, invId: "prep-mozz-fresh" },
+      { id: "top-long-hots", name: "Roasted Italian Long Hots", price: 2.50 },
+      { id: "top-calabrian", name: "Crushed Calabrian Chilis", price: 2.00 },
+      { id: "top-rabe", name: "Sautéed Broccoli Rabe", price: 3.00 },
+      { id: "top-red-onion", name: "Shaved Red Onion", price: 1.50 },
+      { id: "top-basil", name: "Extra Fresh Torn Basil", price: 1.50 }
+    ];
+
+    const TOAST_PREP_MODIFIERS = [
+      { id: "prep-welldone", name: "🔥 Well Done / Extra Crispy" },
+      { id: "prep-lightbake", name: "⏱️ Light Bake" },
+      { id: "prep-squarecut", name: "🏁 Square / Tavern Cut" },
+      { id: "prep-doublecut", name: "✂️ Double Cut (12 Kids Slices)" },
+      { id: "prep-garliccrust", name: "🧄 Garlic Herb Oil Crust" },
+      { id: "prep-noparm", name: "🚫 No Pecorino / Parm Finish" }
+    ];
+
+    const TOAST_DIP_SIDES = [
+      { id: "side-hothoney", name: "🍯 Side Cup Mike's Hot Honey", price: 2.00 },
+      { id: "side-ranch", name: "🥣 Side House Buttermilk Ranch", price: 1.50 },
+      { id: "side-marinara", name: "🍅 Side Warm Sunday Marinara", price: 2.00 },
+      { id: "side-ricotta", name: "🧀 Side Whipped Lemon Ricotta", price: 3.00 },
+      { id: "side-caesar", name: "🥗 Extra House Caesar Dressing", price: 1.50 }
+    ];
+
+    const PROMO_CODES_BOOK = {
+      BUCKYS10: { code: "BUCKYS10", label: "10% Off Online Promo (BUCKYS10)", type: "PERCENT", value: 10 },
+      CHATHAM5: { code: "CHATHAM5", label: "$5.00 Off Chatham Neighbor (CHATHAM5)", type: "FIXED", value: 5 },
+      PIZZABOWL: { code: "PIZZABOWL", label: "15% Off NJ Pizza Bowl Champ (PIZZABOWL)", type: "PERCENT", value: 15 }
+    };
+
+    // ============================================================================
     // 1B. KITCHEN DOUGH & SIGNATURE INGREDIENT INVENTORY METADATA
     // ============================================================================
     const BASE_KITCHEN_INVENTORY = [
@@ -1068,6 +1109,30 @@
       const [closeoutManagerNote, setCloseoutManagerNote] = useState("");
       const [clearPickedUpOnCloseout, setClearPickedUpOnCloseout] = useState(false);
       const [closeoutSuccessBanner, setCloseoutSuccessBanner] = useState("");
+      const [startingCashDrawer, setStartingCashDrawer] = useState("200.00");
+      const [cashPaidOut, setCashPaidOut] = useState("0.00");
+
+      // Toast POS & Online Replacement Suite State: Modifiers, Dining Options, Promos, Loyalty & Thermal Receipt Printer
+      const [customizingItem, setCustomizingItem] = useState(null);
+      const [customToppingsMap, setCustomToppingsMap] = useState({}); // { [topId]: "WHOLE" | "LEFT" | "RIGHT" }
+      const [customPrepMods, setCustomPrepMods] = useState([]);
+      const [customDipSides, setCustomDipSides] = useState([]);
+      const [customItemNote, setCustomItemNote] = useState("");
+      const [customItemQty, setCustomItemQty] = useState(1);
+
+      const [diningOption, setDiningOption] = useState("PICKUP"); // "PICKUP" | "CURBSIDE" | "COUNTER"
+      const [curbsideVehicle, setCurbsideVehicle] = useState("");
+      const [orderKitchenNote, setOrderKitchenNote] = useState("");
+
+      const [promoCodeInput, setPromoCodeInput] = useState("");
+      const [promoFeedback, setPromoFeedback] = useState("");
+      const [appliedDiscount, setAppliedDiscount] = useState(null); // { label, type: "PERCENT" | "FIXED", value }
+
+      const [loyaltyPhoneInput, setLoyaltyPhoneInput] = useState("");
+      const [loyaltyMember, setLoyaltyMember] = useState(null); // { name, phone, points }
+      const [redeemLoyaltyReward, setRedeemLoyaltyReward] = useState(false);
+
+      const [printingOrder, setPrintingOrder] = useState(null);
 
       const [onlineSubPage, setOnlineSubPage] = useState("MENU"); // "MENU" | "GUIDELINES" | "STORY" | "CATERING"
       const [selectedCategory, setSelectedCategory] = useState("Specials");
@@ -1905,47 +1970,220 @@
       const grandmaPanStock = inventory.find(i => i.id === "dough-grandma")?.stock ?? 0;
       const lowOr86Count = inventory.filter(i => i.eightySixed || i.stock <= i.lowThreshold).length;
 
-      // Cart Helpers (Respects live KDS inventory stock)
+      // Cart Helpers (Respects live KDS inventory stock & supports Toast Modifiers / Half-and-Half Toppings)
       const addToCart = (item) => {
         const avail = getMenuItemAvailability(item);
         if (!avail.available || avail.maxCanAdd <= 0) return;
 
         setCart(prev => {
-          const existing = prev.find(i => i.id === item.id);
-          if (existing) {
-            return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+          // Only merge into an existing cart line if it has no custom modifiers/notes
+          const existingIdx = prev.findIndex(
+            i => i.id === item.id && (!i.modifiers || i.modifiers.length === 0) && !i.specialNote
+          );
+          if (existingIdx !== -1) {
+            return prev.map((i, idx) => (idx === existingIdx ? { ...i, quantity: i.quantity + 1 } : i));
           }
-          return [...prev, { ...item, quantity: 1 }];
+          return [
+            ...prev,
+            {
+              ...item,
+              cartLineId: `${item.id}-std-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              quantity: 1,
+              modifiers: [],
+              specialNote: ""
+            }
+          ];
         });
       };
 
-      const updateQuantity = (id, delta) => {
+      const updateQuantity = (idOrLineId, delta) => {
+        const targetCartItem = cart.find(i => (i.cartLineId || i.id) === idOrLineId || i.id === idOrLineId);
+        if (!targetCartItem) return;
         if (delta > 0) {
-          const menuItem = menuItems.find(i => i.id === id);
+          const menuItem = menuItems.find(i => i.id === targetCartItem.id);
           if (menuItem) {
             const avail = getMenuItemAvailability(menuItem);
             if (avail.maxCanAdd <= 0) return;
           }
         }
-        setCart(prev => prev
-          .map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i)
-          .filter(i => i.quantity > 0)
+        setCart(prev =>
+          prev
+            .map(i =>
+              (i.cartLineId || i.id) === idOrLineId ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i
+            )
+            .filter(i => i.quantity > 0)
         );
       };
 
+      // Open Toast-Style Pizza & Item Modifier Builder Modal
+      const openItemCustomizer = (item) => {
+        const avail = getMenuItemAvailability(item);
+        if (!avail.available || avail.maxCanAdd <= 0) return;
+        setCustomizingItem(item);
+        setCustomToppingsMap({});
+        setCustomPrepMods([]);
+        setCustomDipSides([]);
+        setCustomItemNote("");
+        setCustomItemQty(1);
+      };
+
+      const toggleCustomToppingPlacement = (topId, placement) => {
+        setCustomToppingsMap(prev => {
+          const next = { ...prev };
+          if (next[topId] === placement) {
+            delete next[topId];
+          } else {
+            next[topId] = placement; // "WHOLE" | "LEFT" | "RIGHT"
+          }
+          return next;
+        });
+      };
+
+      const toggleCustomPrepMod = (modId) => {
+        setCustomPrepMods(prev =>
+          prev.includes(modId) ? prev.filter(x => x !== modId) : [...prev, modId]
+        );
+      };
+
+      const toggleCustomDipSide = (sideId) => {
+        setCustomDipSides(prev =>
+          prev.includes(sideId) ? prev.filter(x => x !== sideId) : [...prev, sideId]
+        );
+      };
+
+      const customModalModifiersPreview = useMemo(() => {
+        if (!customizingItem) return { modsList: [], modUpcharge: 0 };
+        const modsList = [];
+        let modUpcharge = 0;
+
+        Object.entries(customToppingsMap).forEach(([topId, placement]) => {
+          const topObj = TOAST_PIZZA_TOPPINGS.find(t => t.id === topId);
+          if (!topObj) return;
+          // Half-pie toppings cost 60% of whole-pie topping price (Toast pizza pricing convention)
+          const effPrice = placement === "WHOLE" ? topObj.price : Number((topObj.price * 0.6).toFixed(2));
+          const prefix =
+            placement === "LEFT" ? "◐ Left Half:" : placement === "RIGHT" ? "◑ Right Half:" : "● Whole:";
+          modsList.push({
+            id: `${topId}-${placement}`,
+            label: `${prefix} ${topObj.name}`,
+            price: effPrice
+          });
+          modUpcharge += effPrice;
+        });
+
+        customPrepMods.forEach(modId => {
+          const m = TOAST_PREP_MODIFIERS.find(p => p.id === modId);
+          if (m) {
+            modsList.push({ id: modId, label: m.name, price: 0 });
+          }
+        });
+
+        customDipSides.forEach(sideId => {
+          const s = TOAST_DIP_SIDES.find(d => d.id === sideId);
+          if (s) {
+            modsList.push({ id: sideId, label: s.name, price: s.price });
+            modUpcharge += s.price;
+          }
+        });
+
+        return { modsList, modUpcharge: Number(modUpcharge.toFixed(2)) };
+      }, [customizingItem, customToppingsMap, customPrepMods, customDipSides]);
+
+      const confirmAddCustomizedItem = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!customizingItem) return;
+        const avail = getMenuItemAvailability(customizingItem);
+        const safeQty = Math.max(1, Math.min(avail.maxCanAdd || 1, customItemQty));
+        const unitPrice = Number((customizingItem.price + customModalModifiersPreview.modUpcharge).toFixed(2));
+
+        const customizedCartLine = {
+          ...customizingItem,
+          cartLineId: `${customizingItem.id}-cust-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          basePrice: customizingItem.price,
+          price: unitPrice,
+          quantity: safeQty,
+          modifiers: customModalModifiersPreview.modsList,
+          specialNote: customItemNote.trim()
+        };
+
+        setCart(prev => [...prev, customizedCartLine]);
+        setCustomizingItem(null);
+      };
+
+      // Promo Code, POS Staff Comp & Loyalty Rewards Helpers
+      const applyPromoCodeInput = () => {
+        const clean = promoCodeInput.trim().toUpperCase();
+        if (!clean) return;
+        const match = PROMO_CODES_BOOK[clean];
+        if (!match) {
+          setPromoFeedback("Invalid promo code. Try BUCKYS10, CHATHAM5, or PIZZABOWL.");
+          return;
+        }
+        setAppliedDiscount({ label: match.label, type: match.type, value: match.value });
+        setPromoFeedback(`✓ Applied: ${match.label}`);
+        setPromoCodeInput("");
+      };
+
+      const applyPosQuickDiscount = (label, percentVal) => {
+        if (appliedDiscount && appliedDiscount.label === label) {
+          setAppliedDiscount(null);
+          setPromoFeedback("");
+          return;
+        }
+        setAppliedDiscount({ label, type: "PERCENT", value: percentVal });
+        setPromoFeedback(`✓ Applied POS Discount: ${label}`);
+      };
+
+      const lookupLoyaltyAccount = () => {
+        const digits = (loyaltyPhoneInput || customerPhone || "").replace(/\D/g, "");
+        if (digits.length < 7) {
+          setLoyaltyMember({
+            name: customerName.trim() || "Chatham VIP Guest",
+            phone: "(973) 555-0148",
+            points: 145
+          });
+          setLoyaltyPhoneInput("(973) 555-0148");
+          if (!customerPhone) setCustomerPhone("(973) 555-0148");
+          return;
+        }
+        setLoyaltyMember({
+          name: customerName.trim() || "Bucky's Dough Club Member",
+          phone: loyaltyPhoneInput || customerPhone,
+          points: 145
+        });
+      };
+
       const cartSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const njSalesTax = cartSubtotal * 0.06625; // NJ 6.625% Sales Tax
+
+      const discountDollarAmount = useMemo(() => {
+        if (cartSubtotal <= 0) return 0;
+        let disc = 0;
+        if (appliedDiscount) {
+          if (appliedDiscount.type === "PERCENT") {
+            disc += cartSubtotal * (appliedDiscount.value / 100);
+          } else {
+            disc += appliedDiscount.value;
+          }
+        }
+        if (redeemLoyaltyReward && loyaltyMember && loyaltyMember.points >= 100) {
+          disc += 10.0;
+        }
+        return Number(Math.min(cartSubtotal, disc).toFixed(2));
+      }, [cartSubtotal, appliedDiscount, redeemLoyaltyReward, loyaltyMember]);
+
+      const discountedSubtotal = Math.max(0, Number((cartSubtotal - discountDollarAmount).toFixed(2)));
+      const njSalesTax = discountedSubtotal * 0.06625; // NJ 6.625% Sales Tax on post-discount subtotal
       const tipAmount = useMemo(() => {
         if (cart.length === 0) return 0;
-        if (tipSelection === "15") return cartSubtotal * 0.15;
-        if (tipSelection === "18") return cartSubtotal * 0.18;
-        if (tipSelection === "20") return cartSubtotal * 0.20;
+        if (tipSelection === "15") return discountedSubtotal * 0.15;
+        if (tipSelection === "18") return discountedSubtotal * 0.18;
+        if (tipSelection === "20") return discountedSubtotal * 0.20;
         if (tipSelection === "CUSTOM") {
           const parsed = parseFloat(customTipInput);
           return !Number.isNaN(parsed) && parsed >= 0 ? parsed : 0;
         }
         return 0;
-      }, [cart.length, cartSubtotal, tipSelection, customTipInput]);
+      }, [cart.length, discountedSubtotal, tipSelection, customTipInput]);
       const tipLabelText =
         tipSelection === "15"
           ? "15%"
@@ -1956,7 +2194,7 @@
           : tipSelection === "CUSTOM"
           ? "Custom"
           : "No Tip";
-      const cartTotal = cartSubtotal + njSalesTax + tipAmount;
+      const cartTotal = discountedSubtotal + njSalesTax + tipAmount;
 
       // ========================================================================
       // OPTION 1: EMBEDDED STRIPE PAYMENT ELEMENT & PAYMENTINTENT ENGINE
@@ -2144,6 +2382,11 @@
           customerPhone: customerPhone.trim() || "(973) 200-2388",
           customerEmail: customerEmail.trim() || undefined,
           source: sourceType,
+          diningOption: diningOption || "PICKUP",
+          curbsideVehicle: diningOption === "CURBSIDE" ? curbsideVehicle.trim() : "",
+          orderKitchenNote: orderKitchenNote.trim(),
+          isRush: false,
+          refunded: false,
           status: "QUEUED",
           createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           promisedTime: promised,
@@ -2151,7 +2394,14 @@
           paid: true,
           paymentMethod: paymentLabel,
           stripePaymentIntentId: generatedTxId,
-          subtotal: Number(cartSubtotal.toFixed(2)),
+          subtotal: Number(discountedSubtotal.toFixed(2)),
+          rawSubtotal: Number(cartSubtotal.toFixed(2)),
+          discountAmount: Number(discountDollarAmount.toFixed(2)),
+          discountLabel: appliedDiscount
+            ? appliedDiscount.label
+            : redeemLoyaltyReward
+            ? "$10 Loyalty Reward"
+            : "",
           taxAmount: Number(njSalesTax.toFixed(2)),
           tipAmount: Number(tipAmount.toFixed(2)),
           tipLabel: tipLabelText,
@@ -2162,6 +2412,11 @@
         setOrders(prev => [newOrder, ...prev]);
         setCart([]);
         setCustomTipInput("");
+        setAppliedDiscount(null);
+        setRedeemLoyaltyReward(false);
+        setPromoFeedback("");
+        setOrderKitchenNote("");
+        setCurbsideVehicle("");
         setCustomerName("");
         setCustomerPhone("");
         setIsCheckoutOpen(false);
@@ -2309,12 +2564,52 @@
         );
       };
 
+      // Toast KDS: Toggle 🚨 RUSH / VIP Priority on an active ticket
+      const toggleOrderRush = (orderId) => {
+        setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, isRush: !o.isRush } : o)));
+      };
+
+      // Toast KDS: Recall most recently completed (PICKED_UP) ticket back to READY shelf
+      const recallLastCompletedOrder = () => {
+        setOrders(prev => {
+          const idx = prev.findIndex(o => o.status === "PICKED_UP");
+          if (idx === -1) return prev;
+          return prev.map((o, i) => (i === idx ? { ...o, status: "READY" } : o));
+        });
+      };
+
+      // Toast Accounting: Toggle Refund / Void on an order
+      const toggleRefundOrder = (orderId) => {
+        setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, refunded: !o.refunded } : o)));
+      };
+
+      // Toast KDS: All-Day Item Counts across all open kitchen tickets (QUEUED, MAKE_LINE, IN_OVEN)
+      const allDayKitchenCounts = useMemo(() => {
+        const map = {};
+        orders
+          .filter(o => o.status === "QUEUED" || o.status === "MAKE_LINE" || o.status === "IN_OVEN")
+          .forEach(order => {
+            (order.items || []).forEach(item => {
+              const qty = Number(item.quantity) || 1;
+              if (!map[item.id]) {
+                map[item.id] = { id: item.id, name: item.name, qty: 0, station: item.station || "PIZZA" };
+              }
+              map[item.id].qty += qty;
+            });
+          });
+        return Object.values(map).sort((a, b) => b.qty - a.qty);
+      }, [orders]);
+
       // ========================================================================
       // ACCOUNTING, PRODUCT UTILIZATION & NIGHTLY Z-REPORT ARCHIVE ENGINE
       // ========================================================================
       const computeOrderFinancials = (order) => {
+        if (order.refunded) {
+          return { subtotal: 0, taxAmount: 0, tipAmount: 0, totalAmount: 0, itemCount: 0, discountAmount: 0 };
+        }
         const calcSub = (order.items || []).reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
         const subtotal = typeof order.subtotal === "number" ? order.subtotal : Number(calcSub.toFixed(2));
+        const discountAmount = typeof order.discountAmount === "number" ? order.discountAmount : 0;
         const taxAmount = typeof order.taxAmount === "number" ? order.taxAmount : Number((subtotal * 0.06625).toFixed(2));
         const tipAmount = typeof order.tipAmount === "number" ? order.tipAmount : Number((subtotal * 0.18).toFixed(2));
         const totalAmount = typeof order.totalAmount === "number"
@@ -3178,15 +3473,15 @@
                           </p>
                         </div>
 
-                        <div className="mt-5 pt-3 border-t border-stone-200 flex items-center justify-between">
+                        <div className="mt-5 pt-3 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2">
                           {activeView === "POS" ? (
-                            <div className="flex items-center gap-2 text-[11px] font-medium text-stone-600">
+                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-stone-600">
                               <span className="px-2 py-0.5 bg-bucky-cream border border-stone-300">
-                                ⏱️ {item.prepTimeMins}m prep + {item.cookTimeMins}m bake
+                                ⏱️ {item.prepTimeMins}m + {item.cookTimeMins}m
                               </span>
                               {item.ovenSlots > 0 && (
                                 <span className="px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-900 font-semibold">
-                                  🔥 {item.ovenSlots} deck slot
+                                  🔥 {item.ovenSlots} slot
                                 </span>
                               )}
                             </div>
@@ -3196,21 +3491,33 @@
                             </span>
                           )}
 
-                          <button
-                            disabled={!avail.available || avail.maxCanAdd <= 0}
-                            onClick={() => addToCart(item)}
-                            className={`px-4 py-1.5 font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal transition ${
-                              !avail.available || avail.maxCanAdd <= 0
-                                ? "bg-stone-300 text-stone-600 cursor-not-allowed"
-                                : "bg-bucky-red hover:bg-bucky-darkred active:translate-y-0.5 text-white vintage-shadow-sm"
-                            }`}
-                          >
-                            {!avail.available
-                              ? "86'd / Sold Out"
-                              : avail.maxCanAdd <= 0
-                              ? "Max Stock in Bag"
-                              : "+ Add to Order"}
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            {avail.available && avail.maxCanAdd > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => openItemCustomizer(item)}
+                                className="px-2.5 py-1.5 bg-bucky-cream hover:bg-bucky-parchment text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal transition"
+                                title="Customize toppings, half-and-half, bake & special instructions"
+                              >
+                                ⚙️ Customize
+                              </button>
+                            )}
+                            <button
+                              disabled={!avail.available || avail.maxCanAdd <= 0}
+                              onClick={() => addToCart(item)}
+                              className={`px-3.5 py-1.5 font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal transition ${
+                                !avail.available || avail.maxCanAdd <= 0
+                                  ? "bg-stone-300 text-stone-600 cursor-not-allowed"
+                                  : "bg-bucky-red hover:bg-bucky-darkred active:translate-y-0.5 text-white vintage-shadow-sm"
+                              }`}
+                            >
+                              {!avail.available
+                                ? "86'd / Sold Out"
+                                : avail.maxCanAdd <= 0
+                                ? "Max Stock"
+                                : "+ Add"}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -3237,6 +3544,42 @@
                       >
                         Clear Bag
                       </button>
+                    )}
+                  </div>
+
+                  {/* TOAST DINING OPTION SELECTOR (PICKUP / CURBSIDE / COUNTER) */}
+                  <div className="space-y-2 text-xs">
+                    <label className="font-condensed uppercase text-xs tracking-wider text-stone-700 font-bold block">
+                      Order / Dining Type
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        { id: "PICKUP", label: "🛍️ Pickup" },
+                        { id: "CURBSIDE", label: "🚗 Curbside" },
+                        { id: "COUNTER", label: "🍽️ Counter" }
+                      ].map(opt => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setDiningOption(opt.id)}
+                          className={`py-1.5 px-2 font-condensed uppercase tracking-wider text-[11px] border-2 transition ${
+                            diningOption === opt.id
+                              ? "bg-bucky-red text-white border-bucky-charcoal font-bold"
+                              : "bg-bucky-cream text-bucky-charcoal border-stone-300"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {diningOption === "CURBSIDE" && (
+                      <input
+                        type="text"
+                        placeholder="🚗 Car Color & Make (e.g. Blue Subaru Outback)"
+                        value={curbsideVehicle}
+                        onChange={e => setCurbsideVehicle(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-amber-50 border-2 border-bucky-charcoal text-xs font-medium"
+                      />
                     )}
                   </div>
 
@@ -3333,37 +3676,189 @@
                     </div>
                   ) : (
                     <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-                      {cart.map(item => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between text-xs bg-bucky-cream p-3 border border-bucky-charcoal"
-                        >
-                          <div className="flex-1 pr-2">
-                            <p className="font-display font-bold text-bucky-charcoal text-sm">{item.name}</p>
-                            <p className="text-stone-600">
-                              ${item.price.toFixed(2)} each
-                              {activeView === "POS" && ` • ${(item.ovenSlots * item.quantity).toFixed(2)} oven slots`}
-                            </p>
+                      {cart.map(item => {
+                        const lineKey = item.cartLineId || item.id;
+                        return (
+                          <div
+                            key={lineKey}
+                            className="flex items-start justify-between text-xs bg-bucky-cream p-3 border border-bucky-charcoal gap-2"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-display font-bold text-bucky-charcoal text-sm leading-snug">
+                                {item.name}
+                              </p>
+                              <p className="text-stone-600">
+                                ${item.price.toFixed(2)} each
+                                {activeView === "POS" && ` • ${(item.ovenSlots * item.quantity).toFixed(2)} oven slots`}
+                              </p>
+                              {item.modifiers && item.modifiers.length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                  {item.modifiers.map(mod => (
+                                    <span
+                                      key={mod.id}
+                                      className="block text-[11px] text-bucky-red font-semibold leading-tight"
+                                    >
+                                      + {mod.label} {mod.price > 0 ? `(+$${mod.price.toFixed(2)})` : ""}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {item.specialNote && (
+                                <span className="inline-block mt-1 px-1.5 py-0.5 bg-amber-100 border border-amber-600 text-amber-950 text-[10px] font-bold">
+                                  📝 Note: “{item.specialNote}”
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                onClick={() => updateQuantity(lineKey, -1)}
+                                className="w-6 h-6 bg-white hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                              >
+                                -
+                              </button>
+                              <span className="font-bold w-4 text-center">{item.quantity}</span>
+                              <button
+                                onClick={() => updateQuantity(lineKey, 1)}
+                                className="w-6 h-6 bg-white hover:bg-stone-200 border border-bucky-charcoal font-bold"
+                              >
+                                +
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => updateQuantity(item.id, -1)}
-                              className="w-6 h-6 bg-white hover:bg-stone-200 border border-bucky-charcoal font-bold"
-                            >
-                              -
-                            </button>
-                            <span className="font-bold w-4 text-center">{item.quantity}</span>
-                            <button
-                              onClick={() => updateQuantity(item.id, 1)}
-                              className="w-6 h-6 bg-white hover:bg-stone-200 border border-bucky-charcoal font-bold"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
+
+                  {/* ORDER-LEVEL KITCHEN NOTE, PROMO CODES, POS STAFF DISCOUNTS & LOYALTY REWARDS */}
+                  <div className="border-t-2 border-bucky-charcoal pt-3 space-y-2.5 text-xs">
+                    <input
+                      type="text"
+                      placeholder="📝 Order Kitchen / Pickup Note (e.g. Plates & napkins, extra crispy)..."
+                      value={orderKitchenNote}
+                      onChange={e => setOrderKitchenNote(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-bucky-cream border border-bucky-charcoal text-xs"
+                    />
+
+                    {/* Toast Loyalty Lookup ("Bucky's Dough Club") */}
+                    <div className="bg-bucky-parchment border border-bucky-charcoal p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-condensed uppercase tracking-wider text-[11px] font-bold text-bucky-charcoal">
+                          ⭐ Bucky’s Dough Club Loyalty (1 pt / $1)
+                        </span>
+                        {!loyaltyMember ? (
+                          <button
+                            type="button"
+                            onClick={lookupLoyaltyAccount}
+                            className="text-[10px] font-condensed uppercase text-bucky-red font-bold hover:underline"
+                          >
+                            Demo Member Lookup
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-mono font-bold text-emerald-800">
+                            {loyaltyMember.points} pts (+{Math.floor(discountedSubtotal)} today)
+                          </span>
+                        )}
+                      </div>
+                      {!loyaltyMember ? (
+                        <div className="flex gap-1.5">
+                          <input
+                            type="tel"
+                            placeholder="Phone # for Loyalty Points"
+                            value={loyaltyPhoneInput}
+                            onChange={e => setLoyaltyPhoneInput(e.target.value)}
+                            className="flex-1 px-2 py-1 bg-white border border-bucky-charcoal text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={lookupLoyaltyAccount}
+                            className="px-2.5 py-1 bg-bucky-charcoal text-white font-condensed uppercase text-[11px] font-bold"
+                          >
+                            Link
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between bg-white px-2 py-1 border border-stone-300">
+                          <span className="text-[11px] font-semibold text-bucky-charcoal">
+                            {loyaltyMember.name} ({loyaltyMember.points} pts)
+                          </span>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-bucky-red">
+                            <input
+                              type="checkbox"
+                              checked={redeemLoyaltyReward}
+                              onChange={e => setRedeemLoyaltyReward(e.target.checked)}
+                              className="accent-bucky-red"
+                            />
+                            <span>Redeem $10 Off (100 pts)</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Promo Code Input (Online & POS) + Staff Quick Comps in POS Mode */}
+                    <div className="space-y-1.5">
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          placeholder="Promo Code (BUCKYS10, CHATHAM5)"
+                          value={promoCodeInput}
+                          onChange={e => setPromoCodeInput(e.target.value)}
+                          className="flex-1 px-2.5 py-1 bg-bucky-cream border border-bucky-charcoal text-xs uppercase font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={applyPromoCodeInput}
+                          className="px-3 py-1 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-[11px] font-bold"
+                        >
+                          Apply
+                        </button>
+                        {appliedDiscount && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAppliedDiscount(null);
+                              setPromoFeedback("");
+                            }}
+                            className="px-2 py-1 bg-stone-200 hover:bg-stone-300 text-bucky-charcoal font-bold text-xs border border-bucky-charcoal"
+                            title="Clear discount"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {activeView === "POS" && (
+                        <div className="grid grid-cols-4 gap-1 pt-0.5">
+                          {[
+                            { label: "10% Neighbor", pct: 10 },
+                            { label: "20% Family", pct: 20 },
+                            { label: "50% Staff", pct: 50 },
+                            { label: "100% Comp", pct: 100 }
+                          ].map(comp => {
+                            const isActive = appliedDiscount && appliedDiscount.label === comp.label;
+                            return (
+                              <button
+                                key={comp.label}
+                                type="button"
+                                onClick={() => applyPosQuickDiscount(comp.label, comp.pct)}
+                                className={`py-1 px-1 font-condensed uppercase text-[10px] font-bold border transition ${
+                                  isActive
+                                    ? "bg-bucky-red text-white border-bucky-charcoal"
+                                    : "bg-white hover:bg-stone-100 text-bucky-charcoal border-stone-300"
+                                }`}
+                              >
+                                {comp.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {promoFeedback && (
+                        <p className="text-[11px] font-semibold text-emerald-800">{promoFeedback}</p>
+                      )}
+                    </div>
+                  </div>
 
                   {/* TIP FUNCTION: PREFILLED (15%, 18%, 20%) + CUSTOM BUTTON */}
                   <div className="border-t-2 border-bucky-charcoal pt-3 space-y-2 text-xs">
@@ -3481,6 +3976,14 @@
                       <span>Subtotal</span>
                       <span className="font-semibold">${cartSubtotal.toFixed(2)}</span>
                     </div>
+                    {discountDollarAmount > 0 && (
+                      <div className="flex justify-between text-emerald-800 font-semibold">
+                        <span>
+                          Discount / Loyalty ({appliedDiscount ? appliedDiscount.label : "$10 Loyalty"})
+                        </span>
+                        <span>-${discountDollarAmount.toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-stone-600">
                       <span>NJ Sales Tax (6.625%)</span>
                       <span className="font-semibold">${njSalesTax.toFixed(2)}</span>
@@ -4169,6 +4672,39 @@
                 </div>
               </div>
 
+              {/* TOAST KDS "ALL-DAY" ACTIVE ITEM COUNTS BAR & TICKET RECALL */}
+              <div className="bg-bucky-charcoal text-white border-2 border-bucky-charcoal p-4 vintage-shadow flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="bg-amber-400 text-bucky-charcoal font-condensed uppercase text-xs px-2.5 py-1 font-extrabold tracking-wider">
+                    📊 Toast All-Day Active Kitchen Counts
+                  </span>
+                  {allDayKitchenCounts.length === 0 ? (
+                    <span className="text-xs text-stone-400">No active items in Queue / Make-Line / Oven</span>
+                  ) : (
+                    allDayKitchenCounts.map(entry => (
+                      <span
+                        key={entry.id}
+                        className="px-2.5 py-1 bg-stone-800 border border-stone-600 text-xs font-semibold flex items-center gap-1.5"
+                      >
+                        <strong className="text-amber-300 font-mono text-sm">{entry.qty}x</strong>
+                        <span>{entry.name}</span>
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={recallLastCompletedOrder}
+                    className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 font-condensed uppercase tracking-wider text-xs font-bold border border-stone-600"
+                    title="Recall the most recently handed-off (PICKED_UP) ticket back to the READY shelf"
+                  >
+                    ↺ Recall Last Completed Ticket
+                  </button>
+                </div>
+              </div>
+
               {/* 4-STAGE KANBAN KDS BOARD */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                 {[
@@ -4177,7 +4713,9 @@
                   { key: "IN_OVEN", title: "3. In 30-Yr Deck Oven", headerBg: "bg-bucky-red text-white", btnText: "Pull, Garnish & Box →" },
                   { key: "READY", title: "4. Ready on Pickup Shelf", headerBg: "bg-emerald-800 text-white", btnText: "Hand Off to Guest ✓" }
                 ].map(stage => {
-                  const stageOrders = orders.filter(o => o.status === stage.key);
+                  const stageOrders = orders
+                    .filter(o => o.status === stage.key && !o.refunded)
+                    .sort((a, b) => (b.isRush ? 1 : 0) - (a.isRush ? 1 : 0));
                   return (
                     <div
                       key={stage.key}
@@ -4217,14 +4755,21 @@
                             return (
                               <div
                                 key={order.id}
-                                className="bg-white border-2 border-bucky-charcoal p-3.5 space-y-3 vintage-shadow-sm"
+                                className={`bg-white border-2 p-3.5 space-y-3 vintage-shadow-sm ${
+                                  order.isRush ? "border-bucky-red ring-2 ring-amber-400" : "border-bucky-charcoal"
+                                }`}
                               >
-                                <div className="flex items-start justify-between">
+                                <div className="flex items-start justify-between gap-2">
                                   <div>
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="flex flex-wrap items-center gap-1.5">
                                       <span className="font-display font-black text-base text-bucky-charcoal">
                                         {order.id}
                                       </span>
+                                      {order.isRush && (
+                                        <span className="bg-bucky-red text-white font-condensed uppercase text-[10px] px-1.5 py-0.5 font-extrabold animate-pulse">
+                                          🚨 RUSH
+                                        </span>
+                                      )}
                                       <span className={`font-condensed uppercase text-[10px] tracking-wider font-bold px-1.5 py-0.5 border ${
                                         order.source === "ONLINE"
                                           ? "bg-bucky-cream text-bucky-red border-bucky-red"
@@ -4232,26 +4777,61 @@
                                       }`}>
                                         {order.source}
                                       </span>
+                                      {order.diningOption && (
+                                        <span className="bg-amber-100 border border-amber-700 text-amber-950 font-condensed uppercase text-[10px] px-1.5 py-0.5 font-bold">
+                                          {order.diningOption === "CURBSIDE"
+                                            ? "🚗 CURBSIDE"
+                                            : order.diningOption === "COUNTER"
+                                            ? "🍽️ COUNTER"
+                                            : "🛍️ PICKUP"}
+                                        </span>
+                                      )}
                                     </div>
                                     <p className="text-xs font-bold text-stone-800 mt-0.5">{order.customerName}</p>
+                                    {order.curbsideVehicle && (
+                                      <p className="text-[11px] font-bold text-amber-900 bg-amber-50 px-1.5 py-0.5 border border-amber-400 mt-1">
+                                        🚗 Car: {order.curbsideVehicle}
+                                      </p>
+                                    )}
                                   </div>
-                                  <div className="text-right">
+                                  <div className="text-right shrink-0">
                                     <span className="text-[10px] uppercase font-condensed text-stone-500 block">Promised</span>
                                     <span className="text-xs font-display font-black text-bucky-red">{order.promisedTime}</span>
                                   </div>
                                 </div>
 
-                                <div className="border-t border-b border-stone-200 py-2 space-y-1.5">
+                                <div className="border-t border-b border-stone-200 py-2 space-y-2">
                                   {order.items.map((item, idx) => (
-                                    <div key={idx} className="flex justify-between text-xs">
-                                      <span className="font-bold text-bucky-charcoal">
-                                        {item.quantity}x {item.name}
-                                      </span>
-                                      <span className="text-stone-500 text-[11px] font-medium">
-                                        {item.cookTimeMins > 0 ? `${item.cookTimeMins}m` : "Cold"}
-                                      </span>
+                                    <div key={idx} className="text-xs space-y-0.5">
+                                      <div className="flex justify-between">
+                                        <span className="font-bold text-bucky-charcoal">
+                                          {item.quantity}x {item.name}
+                                        </span>
+                                        <span className="text-stone-500 text-[11px] font-medium">
+                                          {item.cookTimeMins > 0 ? `${item.cookTimeMins}m` : "Cold"}
+                                        </span>
+                                      </div>
+                                      {item.modifiers && item.modifiers.length > 0 && (
+                                        <div className="pl-3 space-y-0.5">
+                                          {item.modifiers.map(mod => (
+                                            <div key={mod.id} className="text-[11px] font-bold text-bucky-red">
+                                              ↳ {mod.label}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {item.specialNote && (
+                                        <div className="ml-3 px-1.5 py-0.5 bg-amber-100 border border-amber-600 text-amber-950 text-[10px] font-bold">
+                                          ⚠️ {item.specialNote}
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
+                                  {order.orderKitchenNote && (
+                                    <div className="p-1.5 bg-red-50 border border-bucky-red text-bucky-red text-[11px] font-bold">
+                                      📝 Order Note: “{order.orderKitchenNote}”
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Dough Pull Tag on Ticket */}
@@ -4268,7 +4848,28 @@
 
                                 <div className="flex items-center justify-between text-[11px] text-stone-600 font-medium">
                                   <span>🔥 {orderSlots.toFixed(2)} deck slots</span>
-                                  <span>{order.paymentMethod}</span>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleOrderRush(order.id)}
+                                      className={`px-1.5 py-0.5 font-condensed uppercase text-[10px] font-bold border ${
+                                        order.isRush
+                                          ? "bg-bucky-red text-white border-bucky-charcoal"
+                                          : "bg-stone-100 hover:bg-stone-200 text-stone-700 border-stone-400"
+                                      }`}
+                                      title="Toggle Rush Priority"
+                                    >
+                                      🚨 Rush
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPrintingOrder(order)}
+                                      className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 text-bucky-charcoal font-condensed uppercase text-[10px] font-bold border border-stone-400"
+                                      title="Print 80mm Kitchen Ticket / Guest Receipt"
+                                    >
+                                      🖨️ Print
+                                    </button>
+                                  </div>
                                 </div>
 
                                 <button
@@ -4983,22 +5584,77 @@
               </div>
 
               {/* =============================================================== */}
-              {/* COMPLETED & ACTIVE ORDER ACCOUNTING LEDGER                      */}
+              {/* TOAST CASH DRAWER SHIFT TILL & COMPLETED ORDER ACCOUNTING LEDGER */}
               {/* =============================================================== */}
-              <div className="bg-white border-2 border-bucky-charcoal p-5 vintage-shadow space-y-3">
+              <div className="bg-white border-2 border-bucky-charcoal p-5 vintage-shadow space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-bucky-charcoal pb-2.5">
                   <div>
                     <span className="font-condensed uppercase text-[11px] tracking-widest text-bucky-red font-bold block">
-                      Itemized Order Ledger
+                      Itemized Order Ledger, Cash Till & Refunds
                     </span>
                     <h3 className="font-display font-black text-xl text-bucky-charcoal">
                       🧾 {accountingFilterMode === "COMPLETED_ONLY" ? "Completed Orders Ledger" : "All Today’s Paid Orders Ledger"} ({accountingOrdersToAnalyze.length})
                     </h3>
                   </div>
                   <span className="text-xs text-stone-600">
-                    Every order handed off in Kitchen KDS is automatically logged here with payment method, tax, tip & total.
+                    Print 80mm thermal receipts, issue 1-click Toast refunds/voids, or reconcile the counter cash drawer.
                   </span>
                 </div>
+
+                {/* Toast Counter Cash Drawer Reconciler Bar */}
+                {(() => {
+                  const startTill = parseFloat(startingCashDrawer) || 0;
+                  const paidOut = parseFloat(cashPaidOut) || 0;
+                  const cashOrdersTotal = accountingOrdersToAnalyze
+                    .filter(o => !o.refunded && (o.paymentMethod || "").toLowerCase().includes("cash"))
+                    .reduce((s, o) => s + computeOrderFinancials(o).totalAmount, 0);
+                  const expectedDrawer = startTill + cashOrdersTotal - paidOut;
+
+                  return (
+                    <div className="bg-bucky-parchment border border-bucky-charcoal p-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs items-center">
+                      <div>
+                        <label className="font-condensed uppercase text-[10px] text-stone-600 font-bold block">
+                          💵 Starting Cash Drawer ($)
+                        </label>
+                        <input
+                          type="number"
+                          step="5"
+                          value={startingCashDrawer}
+                          onChange={e => setStartingCashDrawer(e.target.value)}
+                          className="w-28 mt-0.5 px-2 py-1 bg-white border border-bucky-charcoal font-mono font-bold text-xs"
+                        />
+                      </div>
+                      <div>
+                        <span className="font-condensed uppercase text-[10px] text-stone-600 font-bold block">
+                          ➕ Cash Tender Sales
+                        </span>
+                        <span className="font-mono font-bold text-sm text-emerald-800 block mt-1">
+                          +${cashOrdersTotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <label className="font-condensed uppercase text-[10px] text-stone-600 font-bold block">
+                          ➖ Cash Paid-Out / Petty Cash ($)
+                        </label>
+                        <input
+                          type="number"
+                          step="1"
+                          value={cashPaidOut}
+                          onChange={e => setCashPaidOut(e.target.value)}
+                          className="w-28 mt-0.5 px-2 py-1 bg-white border border-bucky-charcoal font-mono font-bold text-xs"
+                        />
+                      </div>
+                      <div className="bg-white p-2 border border-bucky-charcoal text-right">
+                        <span className="font-condensed uppercase text-[10px] text-bucky-red font-bold block">
+                          Expected Cash in Till
+                        </span>
+                        <span className="font-display font-black text-base text-bucky-charcoal">
+                          ${expectedDrawer.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {accountingOrdersToAnalyze.length === 0 ? (
                   <div className="p-6 text-center text-xs text-stone-500 border border-dashed border-stone-300">
@@ -5012,19 +5668,23 @@
                           <th className="py-2.5 px-3">Order ID & Time</th>
                           <th className="py-2.5 px-3">Guest & Channel</th>
                           <th className="py-2.5 px-3">Status</th>
-                          <th className="py-2.5 px-3">Items Ordered</th>
+                          <th className="py-2.5 px-3">Items & Modifiers</th>
                           <th className="py-2.5 px-3">Payment Method</th>
                           <th className="py-2.5 px-3 text-right">Subtotal</th>
                           <th className="py-2.5 px-3 text-right">NJ Tax</th>
                           <th className="py-2.5 px-3 text-right">Tip</th>
                           <th className="py-2.5 px-3 text-right">Total</th>
+                          <th className="py-2.5 px-3 text-center">Toast Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-200">
                         {accountingOrdersToAnalyze.map(order => {
                           const fin = computeOrderFinancials(order);
                           return (
-                            <tr key={order.id} className="hover:bg-bucky-cream/60">
+                            <tr
+                              key={order.id}
+                              className={order.refunded ? "bg-red-50/70 line-through text-stone-400" : "hover:bg-bucky-cream/60"}
+                            >
                               <td className="py-2.5 px-3">
                                 <div className="font-display font-black text-bucky-charcoal">{order.id}</div>
                                 <div className="text-[11px] text-stone-500">
@@ -5034,16 +5694,27 @@
                               </td>
                               <td className="py-2.5 px-3">
                                 <div className="font-bold text-bucky-charcoal">{order.customerName}</div>
-                                <span className={`inline-block mt-0.5 font-condensed uppercase text-[10px] px-1.5 py-0.2 border font-bold ${
-                                  order.source === "ONLINE"
-                                    ? "bg-bucky-cream text-bucky-red border-bucky-red"
-                                    : "bg-stone-100 text-bucky-charcoal border-bucky-charcoal"
-                                }`}>
-                                  {order.source}
-                                </span>
+                                <div className="flex flex-wrap gap-1 mt-0.5">
+                                  <span className={`inline-block font-condensed uppercase text-[10px] px-1.5 py-0.2 border font-bold ${
+                                    order.source === "ONLINE"
+                                      ? "bg-bucky-cream text-bucky-red border-bucky-red"
+                                      : "bg-stone-100 text-bucky-charcoal border-bucky-charcoal"
+                                  }`}>
+                                    {order.source}
+                                  </span>
+                                  {order.diningOption && (
+                                    <span className="inline-block font-condensed uppercase text-[10px] px-1.5 py-0.2 bg-amber-50 border border-amber-600 text-amber-900 font-bold">
+                                      {order.diningOption}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="py-2.5 px-3">
-                                {order.status === "PICKED_UP" ? (
+                                {order.refunded ? (
+                                  <span className="bg-bucky-red text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold">
+                                    ↩️ REFUNDED / VOID
+                                  </span>
+                                ) : order.status === "PICKED_UP" ? (
                                   <span className="bg-emerald-800 text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold">
                                     ✓ COMPLETED
                                   </span>
@@ -5079,6 +5750,11 @@
                                 <div className="text-[11px] text-stone-700 leading-snug">
                                   {(order.items || []).map(i => `${i.quantity}x ${i.name}`).join(", ")}
                                 </div>
+                                {order.discountAmount > 0 && (
+                                  <span className="text-[10px] text-emerald-800 font-bold block">
+                                    🏷️ Discount: -${order.discountAmount.toFixed(2)} ({order.discountLabel})
+                                  </span>
+                                )}
                               </td>
                               <td className="py-2.5 px-3 font-mono text-[11px] text-stone-700">
                                 {order.paymentMethod}
@@ -5094,6 +5770,30 @@
                               </td>
                               <td className="py-2.5 px-3 text-right font-mono font-black text-bucky-red">
                                 ${fin.totalAmount.toFixed(2)}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPrintingOrder(order)}
+                                    className="px-2 py-1 bg-bucky-cream hover:bg-stone-200 text-bucky-charcoal font-condensed uppercase text-[10px] font-bold border border-bucky-charcoal"
+                                    title="Print 80mm Receipt / Kitchen Ticket"
+                                  >
+                                    🖨️ Receipt
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleRefundOrder(order.id)}
+                                    className={`px-2 py-1 font-condensed uppercase text-[10px] font-bold border ${
+                                      order.refunded
+                                        ? "bg-emerald-800 text-white border-bucky-charcoal"
+                                        : "bg-white hover:bg-red-100 text-bucky-red border-bucky-red"
+                                    }`}
+                                    title={order.refunded ? "Restore order" : "Refund / Void order"}
+                                  >
+                                    {order.refunded ? "↺ Restore" : "↩️ Refund"}
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -7201,6 +7901,311 @@
                   </button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* TOAST PIZZA & ITEM MODIFIER / HALF-AND-HALF BUILDER MODAL         */}
+          {/* ================================================================= */}
+          {customizingItem && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <form
+                onSubmit={confirmAddCustomizedItem}
+                className="bg-bucky-cream text-bucky-charcoal border-4 border-bucky-charcoal max-w-2xl w-full p-6 space-y-4 vintage-shadow max-h-[92vh] overflow-y-auto"
+              >
+                <div className="flex items-start justify-between border-b-2 border-bucky-charcoal pb-3">
+                  <div>
+                    <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
+                      Toast Pizza & Kitchen Modifier Builder • {customizingItem.category}
+                    </span>
+                    <h3 className="font-display font-black text-2xl">
+                      ⚙️ Customize: {customizingItem.name}
+                    </h3>
+                    <p className="text-xs text-stone-600 mt-0.5">
+                      Base Price: <strong>${customizingItem.price.toFixed(2)}</strong> • Choose Whole / Left Half / Right Half toppings, bake preferences & sides.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCustomizingItem(null)}
+                    className="text-stone-500 hover:text-bucky-charcoal font-bold text-lg px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* 1. Whole / Left Half / Right Half Pizza Toppings */}
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                      1. Add Toppings (● Whole Pie / ◐ Left Half / ◑ Right Half)
+                    </span>
+                    <span className="text-[11px] text-stone-500">Half-pie toppings are 60% of whole price</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                    {TOAST_PIZZA_TOPPINGS.map(top => {
+                      const activePlace = customToppingsMap[top.id];
+                      return (
+                        <div
+                          key={top.id}
+                          className={`p-2 border flex items-center justify-between gap-2 ${
+                            activePlace ? "bg-amber-50 border-bucky-charcoal" : "bg-white border-stone-300"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span className="font-bold text-bucky-charcoal block truncate">{top.name}</span>
+                            <span className="text-[10px] font-mono text-stone-500">+${top.price.toFixed(2)} whole</span>
+                          </div>
+                          <div className="inline-flex items-center gap-1 shrink-0">
+                            {[
+                              { id: "LEFT", label: "◐ L" },
+                              { id: "WHOLE", label: "● W" },
+                              { id: "RIGHT", label: "◑ R" }
+                            ].map(pos => (
+                              <button
+                                key={pos.id}
+                                type="button"
+                                onClick={() => toggleCustomToppingPlacement(top.id, pos.id)}
+                                className={`px-1.5 py-1 font-condensed text-[10px] font-bold border transition ${
+                                  activePlace === pos.id
+                                    ? "bg-bucky-red text-white border-bucky-charcoal"
+                                    : "bg-bucky-cream hover:bg-stone-200 text-bucky-charcoal border-stone-300"
+                                }`}
+                              >
+                                {pos.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Bake, Cut & Crust Preferences ($0.00 Kitchen Prep Mods) */}
+                <div className="space-y-1.5 text-xs">
+                  <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal block">
+                    2. Bake, Cut & Crust Instructions (No Charge)
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TOAST_PREP_MODIFIERS.map(mod => {
+                      const isActive = customPrepMods.includes(mod.id);
+                      return (
+                        <button
+                          key={mod.id}
+                          type="button"
+                          onClick={() => toggleCustomPrepMod(mod.id)}
+                          className={`px-2.5 py-1.5 font-condensed uppercase tracking-wider text-[11px] font-bold border transition ${
+                            isActive
+                              ? "bg-bucky-charcoal text-white border-bucky-charcoal"
+                              : "bg-white hover:bg-stone-100 text-bucky-charcoal border-stone-300"
+                          }`}
+                        >
+                          {mod.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. Dipping Cups & Side Sauces */}
+                <div className="space-y-1.5 text-xs">
+                  <span className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal block">
+                    3. Add Dipping Cups & Side Sauces
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {TOAST_DIP_SIDES.map(side => {
+                      const isActive = customDipSides.includes(side.id);
+                      return (
+                        <button
+                          key={side.id}
+                          type="button"
+                          onClick={() => toggleCustomDipSide(side.id)}
+                          className={`p-2 text-left border flex items-center justify-between transition ${
+                            isActive
+                              ? "bg-bucky-red text-white border-bucky-charcoal font-bold"
+                              : "bg-white hover:bg-stone-100 text-bucky-charcoal border-stone-300"
+                          }`}
+                        >
+                          <span>{side.name}</span>
+                          <span className="font-mono text-[11px]">+${side.price.toFixed(2)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. Special Kitchen / Allergy Notes */}
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="font-condensed uppercase tracking-wider font-bold text-bucky-charcoal">
+                      4. Special Kitchen / Allergy Instructions
+                    </label>
+                    <div className="flex gap-1">
+                      {["⚠️ Nut Allergy", "⚠️ Gluten Sensitivity", "👶 Kids Cut"].map(tag => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() =>
+                            setCustomItemNote(prev => (prev ? `${prev} • ${tag}` : tag))
+                          }
+                          className="px-1.5 py-0.5 bg-amber-100 hover:bg-amber-200 border border-amber-700 text-amber-950 font-condensed text-[10px] font-bold"
+                        >
+                          +{tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="e.g. Light cheese on left half, severe tree nut allergy..."
+                    value={customItemNote}
+                    onChange={e => setCustomItemNote(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border-2 border-bucky-charcoal text-xs"
+                  />
+                </div>
+
+                {/* Footer: Quantity Stepper & Add Customized Item to Order */}
+                <div className="pt-3 border-t-2 border-bucky-charcoal flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-condensed uppercase text-xs font-bold">Qty:</span>
+                    <button
+                      type="button"
+                      onClick={() => setCustomItemQty(q => Math.max(1, q - 1))}
+                      className="w-7 h-7 bg-white border border-bucky-charcoal font-bold"
+                    >
+                      -
+                    </button>
+                    <span className="font-display font-black text-sm w-6 text-center">{customItemQty}</span>
+                    <button
+                      type="button"
+                      onClick={() => setCustomItemQty(q => q + 1)}
+                      className="w-7 h-7 bg-white border border-bucky-charcoal font-bold"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-widest text-xs font-extrabold border-2 border-bucky-charcoal vintage-shadow-sm"
+                  >
+                    + Add Customized Item ($
+                    {((customizingItem.price + customModalModifiersPreview.modUpcharge) * customItemQty).toFixed(2)})
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* TOAST 80MM THERMAL KITCHEN CHIT & GUEST RECEIPT PRINTER MODAL     */}
+          {/* ================================================================= */}
+          {printingOrder && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-white text-bucky-charcoal border-4 border-bucky-charcoal max-w-sm w-full p-6 space-y-4 vintage-shadow font-mono text-xs max-h-[92vh] overflow-y-auto">
+                <div className="text-center border-b-2 border-dashed border-bucky-charcoal pb-3 space-y-0.5">
+                  <div className="font-display font-black text-lg tracking-tight">
+                    BUCKY’S REAL GOOD PIZZA
+                  </div>
+                  <div>465 Main Street • Chatham, NJ 07928</div>
+                  <div>(973) 200-2388 • buckysrealgoodpizza.com</div>
+                  <div className="pt-2 font-bold text-sm">
+                    {printingOrder.id} ({printingOrder.source} • {printingOrder.diningOption || "PICKUP"})
+                  </div>
+                  <div>
+                    Guest: <strong>{printingOrder.customerName}</strong> ({printingOrder.customerPhone})
+                  </div>
+                  <div>
+                    Ordered: {printingOrder.createdAt} | Promised: <strong>{printingOrder.promisedTime}</strong>
+                  </div>
+                  {printingOrder.curbsideVehicle && (
+                    <div className="font-bold">🚗 Curbside Car: {printingOrder.curbsideVehicle}</div>
+                  )}
+                </div>
+
+                {/* Itemized Lines + Modifiers */}
+                <div className="space-y-2 border-b-2 border-dashed border-bucky-charcoal pb-3">
+                  {(printingOrder.items || []).map((item, idx) => (
+                    <div key={idx} className="space-y-0.5">
+                      <div className="flex justify-between font-bold">
+                        <span>
+                          {item.quantity}x {item.name}
+                        </span>
+                        <span>${((item.price || 0) * (item.quantity || 1)).toFixed(2)}</span>
+                      </div>
+                      {item.modifiers &&
+                        item.modifiers.map(m => (
+                          <div key={m.id} className="pl-3 text-[11px] text-stone-700">
+                            + {m.label}
+                          </div>
+                        ))}
+                      {item.specialNote && (
+                        <div className="pl-3 text-[11px] font-bold">
+                          * NOTE: {item.specialNote}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {printingOrder.orderKitchenNote && (
+                    <div className="pt-1 font-bold">
+                      * ORDER NOTE: {printingOrder.orderKitchenNote}
+                    </div>
+                  )}
+                </div>
+
+                {/* Receipt Totals */}
+                {(() => {
+                  const fin = computeOrderFinancials(printingOrder);
+                  return (
+                    <div className="space-y-1 border-b-2 border-dashed border-bucky-charcoal pb-3">
+                      <div className="flex justify-between">
+                        <span>Subtotal</span>
+                        <span>${fin.subtotal.toFixed(2)}</span>
+                      </div>
+                      {printingOrder.discountAmount > 0 && (
+                        <div className="flex justify-between">
+                          <span>Discount ({printingOrder.discountLabel})</span>
+                          <span>-${printingOrder.discountAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>NJ Sales Tax (6.625%)</span>
+                        <span>${fin.taxAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Tip</span>
+                        <span>${fin.tipAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-sm pt-1">
+                        <span>TOTAL PAID ({printingOrder.paymentMethod})</span>
+                        <span>${fin.totalAmount.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="text-center text-[11px] text-stone-500">
+                  Thank you for supporting our family pizzeria in Chatham!
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1 font-sans">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="py-2 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                  >
+                    🖨️ Print Chit / Receipt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintingOrder(null)}
+                    className="py-2 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
