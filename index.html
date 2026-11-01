@@ -81,6 +81,29 @@
     .vintage-shadow-red {
       box-shadow: 4px 4px 0px #C8281E;
     }
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #bucky-printable-receipt,
+      #bucky-printable-receipt * {
+        visibility: visible;
+      }
+      #bucky-printable-receipt {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 80mm;
+        max-width: 100%;
+        margin: 0;
+        padding: 12px;
+        border: none !important;
+        box-shadow: none !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
   </style>
 </head>
 <body class="bg-vintage-paper text-bucky-charcoal min-h-screen w-full max-w-full overflow-x-hidden selection:bg-bucky-red selection:text-white">
@@ -105,13 +128,13 @@
     // 1A. TOAST POS PIZZA MODIFIER, HALF-AND-HALF TOPPINGS, PROMO & LOYALTY CATALOG
     // ============================================================================
     const TOAST_PIZZA_TOPPINGS = [
-      { id: "top-ezzo-pep", name: "Ezzo Cup & Char Pepperoni", price: 3.50, invId: "prep-ezzo-pep" },
+      { id: "top-ezzo-pep", name: "Ezzo Cup & Char Pepperoni", price: 3.50, invId: "prep-pepperoni" },
       { id: "top-sausage", name: "House Sweet Italian Sausage", price: 3.50, invId: "prep-sausage" },
-      { id: "top-mushrooms", name: "Roasted Cremini Mushrooms", price: 3.00, invId: "prep-mushrooms" },
-      { id: "top-hot-honey", name: "Mike's Hot Honey Drizzle", price: 2.00, invId: "prep-hot-honey" },
-      { id: "top-ricotta", name: "Whipped Lemon Ricotta Dollops", price: 3.00, invId: "prep-hot-honey" },
-      { id: "top-burrata", name: "Fresh Creamy Burrata", price: 4.50, invId: "prep-mozz-fresh" },
-      { id: "top-extra-mozz", name: "Extra Fresh Mozzarella", price: 3.00, invId: "prep-mozz-fresh" },
+      { id: "top-mushrooms", name: "Roasted Cremini Mushrooms", price: 3.00, invId: "prep-mushroom" },
+      { id: "top-hot-honey", name: "Mike's Hot Honey Drizzle", price: 2.00 },
+      { id: "top-ricotta", name: "Whipped Lemon Ricotta Dollops", price: 3.00, invId: "prep-ricotta" },
+      { id: "top-burrata", name: "Fresh Creamy Burrata", price: 4.50 },
+      { id: "top-extra-mozz", name: "Extra Fresh Mozzarella", price: 3.00 },
       { id: "top-long-hots", name: "Roasted Italian Long Hots", price: 2.50 },
       { id: "top-calabrian", name: "Crushed Calabrian Chilis", price: 2.00 },
       { id: "top-rabe", name: "Sautéed Broccoli Rabe", price: 3.00 },
@@ -817,9 +840,11 @@
         return {
           now,
           isCurrentlyWithinOpenHours: true,
+          nextOpenDayOffset: 0,
           nextOpeningDate: todayOpenDate,
           serviceCloseDate: todayCloseDate,
           targetDaySchedule: todaySchedule,
+          nextOpeningDaySchedule: todaySchedule,
           dayPrefixLabel: "Today"
         };
       }
@@ -829,9 +854,11 @@
         return {
           now,
           isCurrentlyWithinOpenHours: false,
+          nextOpenDayOffset: 0,
           nextOpeningDate: todayOpenDate,
           serviceCloseDate: todayCloseDate,
           targetDaySchedule: todaySchedule,
+          nextOpeningDaySchedule: todaySchedule,
           dayPrefixLabel: "Today"
         };
       }
@@ -846,9 +873,11 @@
           return {
             now,
             isCurrentlyWithinOpenHours: false,
+            nextOpenDayOffset: offset,
             nextOpeningDate: nextOpen,
             serviceCloseDate: nextClose,
             targetDaySchedule: candSchedule,
+            nextOpeningDaySchedule: candSchedule,
             dayPrefixLabel: offset === 1 ? `Tomorrow (${candSchedule.shortLabel})` : candSchedule.shortLabel
           };
         }
@@ -860,9 +889,11 @@
       return {
         now,
         isCurrentlyWithinOpenHours: false,
+        nextOpenDayOffset: 1,
         nextOpeningDate: fallbackOpen,
         serviceCloseDate: fallbackClose,
         targetDaySchedule: todaySchedule,
+        nextOpeningDaySchedule: todaySchedule,
         dayPrefixLabel: "Tomorrow"
       };
     }
@@ -961,6 +992,8 @@
         readyTimestamp,
         readyTimeFormatted,
         isCurrentlyWithinOpenHours: win.isCurrentlyWithinOpenHours,
+        nextOpenDayOffset: win.nextOpenDayOffset,
+        nextOpeningDaySchedule: win.nextOpeningDaySchedule,
         nextOpeningDate: win.nextOpeningDate,
         serviceCloseDate: win.serviceCloseDate,
         dayPrefixLabel: win.dayPrefixLabel,
@@ -1025,7 +1058,7 @@
         completedAt: new Date(Date.now() - 15 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         estimatedMins: 22,
         paid: true,
-        paymentMethod: "Toast Tap / Card",
+        paymentMethod: "Counter Tap / Card",
         stripePaymentIntentId: "pi_3Q8M4P9R2T6W",
         subtotal: 66.00,
         taxAmount: 4.37,
@@ -2180,7 +2213,12 @@
           if (item.id !== itemId) return item;
           if (field === "price") {
             const parsedPrice = Math.max(0, Math.round((parseFloat(rawValue) || 0) * 100) / 100);
-            return { ...item, price: parsedPrice };
+            const delta = parsedPrice - (item.basePrice !== undefined ? item.basePrice : item.price);
+            return {
+              ...item,
+              basePrice: parsedPrice,
+              price: Math.max(0, Number((item.price + delta).toFixed(2)))
+            };
           }
           if (field === "name") {
             return { ...item, name: rawValue };
@@ -2200,11 +2238,15 @@
         setMenuItems(prev => prev.map(computeUpdated));
         setCart(prev => prev.map(computeUpdated));
 
-        // Keep linked KDS inventory name/category synced if name or category changed
-        if (field === "name" || field === "category") {
+        // Keep linked KDS inventory name/category/price synced if changed
+        if (field === "name" || field === "category" || field === "price") {
           setInventory(prev =>
             prev.map(inv => {
               if (inv.id !== itemId) return inv;
+              if (field === "price") {
+                const parsedPrice = Math.max(0, Math.round((parseFloat(rawValue) || 0) * 100) / 100);
+                return { ...inv, price: parsedPrice, notes: `${inv.category} • $${parsedPrice.toFixed(2)}` };
+              }
               if (field === "name") {
                 return { ...inv, name: rawValue, shortName: rawValue.slice(0, 18) };
               }
@@ -4490,7 +4532,7 @@
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           disabled={cart.length === 0}
-                          onClick={() => handlePlaceOrder("POS", "Toast Tap / Card")}
+                          onClick={() => handlePlaceOrder("POS", "Counter Tap / Card")}
                           className="py-2.5 bg-bucky-charcoal hover:bg-stone-800 disabled:bg-stone-300 text-white font-condensed uppercase tracking-wider text-xs font-bold border-2 border-bucky-charcoal"
                         >
                           💳 Card Terminal
@@ -6152,11 +6194,11 @@
                     </h3>
                   </div>
                   <span className="text-xs text-stone-600">
-                    Print 80mm thermal receipts, issue 1-click Toast refunds/voids, or reconcile the counter cash drawer.
+                    Print 80mm thermal receipts, issue 1-click refunds/voids, or reconcile the counter cash drawer.
                   </span>
                 </div>
 
-                {/* Toast Counter Cash Drawer Reconciler Bar */}
+                {/* Counter Cash Drawer Reconciler Bar */}
                 {(() => {
                   const startTill = parseFloat(startingCashDrawer) || 0;
                   const paidOut = parseFloat(cashPaidOut) || 0;
@@ -6229,7 +6271,7 @@
                           <th className="py-2.5 px-3 text-right">NJ Tax</th>
                           <th className="py-2.5 px-3 text-right">Tip</th>
                           <th className="py-2.5 px-3 text-right">Total</th>
-                          <th className="py-2.5 px-3 text-center">Toast Actions</th>
+                          <th className="py-2.5 px-3 text-center">Order Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-200">
@@ -8518,7 +8560,7 @@
                 <div className="flex items-start justify-between border-b-2 border-bucky-charcoal pb-3">
                   <div>
                     <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
-                      Toast Pizza & Kitchen Modifier Builder • {customizingItem.category}
+                      Bucky’s Pizza & Kitchen Modifier Builder • {customizingItem.category}
                     </span>
                     <h3 className="font-display font-black text-2xl">
                       ⚙️ Customize: {customizingItem.name}
@@ -8700,12 +8742,13 @@
             </div>
           )}
 
-          {/* ================================================================= */}
-          {/* TOAST 80MM THERMAL KITCHEN CHIT & GUEST RECEIPT PRINTER MODAL     */}
-          {/* ================================================================= */}
+          {/* 80MM THERMAL KITCHEN CHIT & GUEST RECEIPT PRINTER MODAL */}
           {printingOrder && (
             <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white text-bucky-charcoal border-4 border-bucky-charcoal max-w-sm w-full p-6 space-y-4 vintage-shadow font-mono text-xs max-h-[92vh] overflow-y-auto">
+              <div
+                id="bucky-printable-receipt"
+                className="bg-white text-bucky-charcoal border-4 border-bucky-charcoal max-w-sm w-full p-6 space-y-4 vintage-shadow font-mono text-xs max-h-[92vh] overflow-y-auto"
+              >
                 <div className="text-center border-b-2 border-dashed border-bucky-charcoal pb-3 space-y-0.5">
                   <div className="font-display font-black text-lg tracking-tight">
                     BUCKY’S REAL GOOD PIZZA
@@ -8791,7 +8834,7 @@
                   Thank you for supporting our family pizzeria in Chatham!
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1 font-sans">
+                <div className="grid grid-cols-2 gap-2 pt-1 font-sans no-print">
                   <button
                     type="button"
                     onClick={() => window.print()}
@@ -8821,7 +8864,7 @@
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
-                        465 Main St, Chatham NJ • Toast Master Store Availability
+                        465 Main St, Chatham NJ • Master Store Availability
                       </span>
                       <span
                         className={`px-2 py-0.5 font-condensed uppercase text-[10px] tracking-wider font-bold border ${
