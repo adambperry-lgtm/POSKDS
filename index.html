@@ -1112,10 +1112,11 @@
       const [activeView, setActiveView] = useState(() => {
         if (initialUrlMode === "pos") return "POS";
         if (initialUrlMode === "kds") return "KDS";
+        if (initialUrlMode === "inventory") return "INVENTORY";
         if (initialUrlMode === "menu") return "MENU_EDITOR";
         if (initialUrlMode === "accounting") return "ACCOUNTING";
         return "ONLINE";
-      }); // "ONLINE" | "POS" | "KDS" | "MENU_EDITOR" | "ACCOUNTING"
+      }); // "ONLINE" | "POS" | "KDS" | "INVENTORY" | "MENU_EDITOR" | "ACCOUNTING"
 
       const [menuEditorCategoryFilter, setMenuEditorCategoryFilter] = useState("ALL");
       const [menuEditorSearch, setMenuEditorSearch] = useState("");
@@ -3128,7 +3129,20 @@
                   >
                     <span>🔥 Kitchen KDS</span>
                     <span className="px-1.5 py-0.2 bg-white text-bucky-charcoal font-bold rounded-full text-[11px]">
-                      {orders.filter(o => o.status !== "PICKED_UP").length}
+                      {orders.filter(o => o.status !== "PICKED_UP" && !o.refunded).length}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setActiveView("INVENTORY")}
+                    className={`px-3 py-1.5 rounded font-condensed uppercase tracking-wider text-xs transition flex items-center gap-1.5 ${
+                      activeView === "INVENTORY"
+                        ? "bg-bucky-red text-white shadow"
+                        : "text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    <span>📦 Live Inventory</span>
+                    <span className="px-1.5 py-0.2 bg-stone-700 text-stone-200 font-bold rounded-full text-[10px]">
+                      {inventory.length}
                     </span>
                     {lowOr86Count > 0 && (
                       <span
@@ -4308,7 +4322,7 @@
           )}
 
           {/* ================================================================= */}
-          {/* VIEW 3: KITCHEN DISPLAY SYSTEM (KDS), OVEN TUNER & INVENTORY      */}
+          {/* VIEW 3: KITCHEN DISPLAY SYSTEM (KDS) & OVEN PACING CONTROLLER     */}
           {/* ================================================================= */}
           {activeView === "KDS" && (
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 space-y-6">
@@ -4317,10 +4331,10 @@
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <span className="font-condensed uppercase tracking-widest text-xs text-bucky-red font-bold">
-                      Bucky’s Kitchen Pacing, Deck Oven & Dough Inventory Controller
+                      Bucky’s Kitchen Display System & Deck Oven Pacing Controller
                     </span>
                     <h2 className="font-display font-black text-2xl">
-                      “Old Ovens, New Problems” — Live KDS & Dough Tracker
+                      “Old Ovens, New Problems” — Live 4-Stage Kitchen KDS
                     </h2>
                   </div>
                   <div className="flex flex-wrap items-center gap-6 text-right">
@@ -4406,9 +4420,13 @@
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-stone-300 font-condensed uppercase tracking-wider text-[11px]">
-                      Today ({storeStatusInfo.todaySchedule.label}): <strong className="text-white">{storeStatusInfo.todayHoursFormatted}</strong>
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveView("INVENTORY")}
+                      className="px-3 py-1 bg-amber-400 hover:bg-amber-300 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-extrabold border border-bucky-charcoal"
+                    >
+                      📦 Open Live Inventory Tab ({inventory.length} Items{lowOr86Count > 0 ? ` • ⚠️ ${lowOr86Count} Low/86` : ""}) →
+                    </button>
                     <button
                       type="button"
                       onClick={() => setIsStoreHoursModalOpen(true)}
@@ -4419,376 +4437,6 @@
                   </div>
                 </div>
               </div>
-
-              {/* =============================================================== */}
-              {/* PIZZA & INGREDIENT INVENTORY TRACKER PANEL (BUILT INTO KDS)     */}
-              {/* =============================================================== */}
-              <section className="bg-white border-2 border-bucky-charcoal vintage-shadow">
-                {/* Inventory Header Bar */}
-                <div className="bg-bucky-parchment border-b-2 border-bucky-charcoal px-5 py-3.5 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <span className="bg-bucky-red text-white font-condensed uppercase text-xs font-bold px-2.5 py-1 tracking-wider">
-                        📦 Complete Kitchen & Menu Inventory ({inventory.length} Items)
-                      </span>
-                      <div>
-                        <h3 className="font-display font-black text-lg text-bucky-charcoal leading-none">
-                          All Menu Items, Sourdough Dough Trays, Detroit Pans & Prep Tracker
-                        </h3>
-                        <p className="text-xs text-stone-600 mt-0.5">
-                          Every menu item & base ingredient is tracked here. Auto-deducts when orders fire; 86’ing marks items <strong>Sold Out</strong> online.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => setIsOvenTimingModalOpen(true)}
-                        className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-extrabold border-2 border-bucky-charcoal vintage-shadow-sm"
-                        title="Customize deck oven slots, bake time (mins), and prep time for every menu item"
-                      >
-                        🔥 Oven Slots & Cook Times
-                      </button>
-
-                      <button
-                        onClick={() => setIsAddCustomModalOpen(true)}
-                        className="px-3.5 py-1.5 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
-                        title="Create a new custom menu item or kitchen inventory ingredient"
-                      >
-                        ➕ Add Custom Item
-                      </button>
-
-                      <button
-                        onClick={openBulkInventoryModal}
-                        className="px-3.5 py-1.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
-                        title="Open shift count sheet to manually set all inventory items at once"
-                      >
-                        ✏️ Set All Counts
-                      </button>
-
-                      <button
-                        onClick={resetAllInventoryToPar}
-                        className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
-                        title="Restock all menu items, dough trays and prep pans to full daily par"
-                      >
-                        ↻ Restock All to Par
-                      </button>
-
-                      <button
-                        onClick={() => setShowKdsInventoryPanel(prev => !prev)}
-                        className="px-2.5 py-1.5 bg-stone-200 hover:bg-stone-300 text-bucky-charcoal font-condensed uppercase text-xs font-bold border border-bucky-charcoal"
-                      >
-                        {showKdsInventoryPanel ? "Hide ▲" : "Expand ▼"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Filter Tabs & Search Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-stone-300">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {[
-                        { id: "ALL", label: `All (${inventory.length})` },
-                        { id: "MENU_ALL", label: `🍕 All Menu Items (${inventory.filter(i => i.isMenuItem).length})` },
-                        { id: "DOUGH", label: `🌾 Dough & Pans (${inventory.filter(i => i.category === "DOUGH").length})` },
-                        { id: "PREP", label: `🧀 Prep & Toppings (${inventory.filter(i => i.category === "PREP").length})` },
-                        { id: "ALERTS", label: `⚠️ Low / 86'd (${lowOr86Count})` },
-                        ...MENU_CATEGORIES.map(cat => ({
-                          id: cat,
-                          label: `${cat} (${inventory.filter(i => i.category === cat).length})`
-                        }))
-                      ].map(tab => (
-                        <button
-                          key={tab.id}
-                          onClick={() => {
-                            setKdsInventoryFilter(tab.id);
-                            setShowKdsInventoryPanel(true);
-                          }}
-                          className={`px-2.5 py-1 font-condensed uppercase tracking-wider text-[11px] border transition ${
-                            kdsInventoryFilter === tab.id && showKdsInventoryPanel
-                              ? "bg-bucky-charcoal text-white border-bucky-charcoal font-bold"
-                              : "bg-white text-bucky-charcoal border-bucky-charcoal hover:bg-bucky-cream"
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="relative min-w-[220px] flex-1 max-w-xs">
-                      <input
-                        type="text"
-                        placeholder="🔍 Search menu or kitchen stock..."
-                        value={kdsSearchQuery}
-                        onChange={e => {
-                          setKdsSearchQuery(e.target.value);
-                          setShowKdsInventoryPanel(true);
-                        }}
-                        className="w-full px-3 py-1 bg-white border-2 border-bucky-charcoal text-xs text-bucky-charcoal font-medium"
-                      />
-                      {kdsSearchQuery && (
-                        <button
-                          onClick={() => setKdsSearchQuery("")}
-                          className="absolute right-2 top-1 text-xs text-stone-500 hover:text-bucky-charcoal font-bold"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Inventory Grid */}
-                {showKdsInventoryPanel && (
-                  <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-h-[640px] overflow-y-auto">
-                    {filteredInventory.map(inv => {
-                      const pct = Math.min(100, Math.round((inv.stock / Math.max(1, inv.dailyPar)) * 100));
-                      const is86 = inv.eightySixed || inv.stock === 0;
-                      const isLow = !is86 && inv.stock <= inv.lowThreshold;
-                      const committedInQueue = activeTicketInventoryUsage[inv.id] || 0;
-                      const linkedMenuItem = inv.isMenuItem ? menuItems.find(m => m.id === inv.id) : null;
-
-                      return (
-                        <div
-                          key={inv.id}
-                          className={`border-2 border-bucky-charcoal p-3.5 flex flex-col justify-between vintage-shadow-sm transition ${
-                            is86
-                              ? "bg-red-50/90 border-bucky-red"
-                              : isLow
-                              ? "bg-amber-50/80"
-                              : "bg-bucky-cream"
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <span className={`font-condensed uppercase text-[10px] tracking-widest px-1.5 py-0.5 font-bold ${
-                                    inv.category === "DOUGH"
-                                      ? "bg-bucky-charcoal text-white"
-                                      : inv.category === "PREP"
-                                      ? "bg-stone-200 text-bucky-charcoal border border-stone-400"
-                                      : "bg-bucky-red/15 text-bucky-red border border-bucky-red/40"
-                                  }`}>
-                                    {inv.category === "DOUGH"
-                                      ? "🌾 DOUGH / PAN"
-                                      : inv.category === "PREP"
-                                      ? "🧀 PREP / TOPPING"
-                                      : `🍕 ${inv.category}`}
-                                  </span>
-                                  {inv.isCustom && (
-                                    <span className="bg-purple-900 text-white font-condensed uppercase text-[9px] px-1.5 py-0.5 font-bold">
-                                      ★ CUSTOM
-                                    </span>
-                                  )}
-                                </div>
-                                <h4 className="font-display font-bold text-sm text-bucky-charcoal mt-1 leading-snug">
-                                  {inv.name}
-                                </h4>
-                              </div>
-
-                              {/* Status Pill + Optional Delete for Custom Items */}
-                              <div className="flex items-center gap-1 shrink-0">
-                                {is86 ? (
-                                  <span className="bg-bucky-red text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
-                                    ⛔ 86'D / OUT
-                                  </span>
-                                ) : isLow ? (
-                                  <span className="bg-amber-400 text-bucky-charcoal border border-bucky-charcoal font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
-                                    ⚠️ LOW STOCK
-                                  </span>
-                                ) : (
-                                  <span className="bg-emerald-100 text-emerald-900 border border-emerald-700 font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
-                                    ✓ GOOD
-                                  </span>
-                                )}
-                                {inv.isCustom && (
-                                  <button
-                                    onClick={() => deleteCustomInventoryItem(inv.id)}
-                                    className="px-1.5 py-0.5 bg-stone-200 hover:bg-bucky-red hover:text-white text-stone-700 text-[10px] font-bold border border-stone-400"
-                                    title="Delete custom item"
-                                  >
-                                    🗑️
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-
-                            <p className="text-[11px] text-stone-600 mt-1 leading-snug">
-                              {inv.notes}
-                            </p>
-
-                            {/* Stock Numbers, Inline Manual Input & Progress Bar */}
-                            <div className="mt-3 bg-white border border-stone-300 p-2.5 space-y-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] font-condensed uppercase text-stone-500">
-                                  Set Count / Par:
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="999"
-                                    value={is86 ? 0 : inv.stock}
-                                    onChange={e => setInventoryItemField(inv.id, "stock", e.target.value)}
-                                    className={`w-14 px-1.5 py-0.5 text-right font-display font-black text-sm border border-bucky-charcoal bg-bucky-cream focus:outline-none focus:ring-1 focus:ring-bucky-red ${
-                                      is86 ? "text-bucky-red" : isLow ? "text-amber-700" : "text-bucky-charcoal"
-                                    }`}
-                                    title="Type exact current stock count"
-                                  />
-                                  <span className="text-xs text-stone-400 font-bold">/</span>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    max="999"
-                                    value={inv.dailyPar}
-                                    onChange={e => setInventoryItemField(inv.id, "dailyPar", e.target.value)}
-                                    className="w-12 px-1 py-0.5 text-right font-sans font-semibold text-xs text-stone-600 border border-stone-300 bg-stone-50 focus:outline-none focus:border-bucky-charcoal"
-                                    title="Type daily par target"
-                                  />
-                                  <span className="text-[10px] text-stone-500">{inv.unit}</span>
-                                </div>
-                              </div>
-
-                              {/* Bar */}
-                              <div className="w-full h-2 bg-stone-200 overflow-hidden border border-stone-300">
-                                <div
-                                  style={{ width: `${is86 ? 0 : pct}%` }}
-                                  className={`h-full transition-all ${
-                                    is86
-                                      ? "bg-bucky-red"
-                                      : isLow
-                                      ? "bg-amber-500"
-                                      : "bg-emerald-600"
-                                  }`}
-                                />
-                              </div>
-
-                              <div className="flex items-center justify-between text-[10px] text-stone-600 pt-0.5">
-                                <span>
-                                  In KDS Queue: <strong>{committedInQueue} {inv.unit}</strong>
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  Alert ≤
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    max="99"
-                                    value={inv.lowThreshold}
-                                    onChange={e => setInventoryItemField(inv.id, "lowThreshold", e.target.value)}
-                                    className="w-9 px-1 py-0 text-center font-bold text-[10px] border border-stone-300 bg-stone-50"
-                                    title="Low-stock alert threshold"
-                                  />
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Inline Oven Slots, Cook Time & Prep Time Editor for Menu Items */}
-                            {linkedMenuItem && (
-                              <div className="mt-2 bg-bucky-parchment border border-bucky-charcoal p-2 space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-condensed uppercase text-[10px] tracking-wider font-bold text-bucky-charcoal">
-                                    🔥 Oven Slots & Bake Timing
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsOvenTimingModalOpen(true)}
-                                    className="text-[10px] font-condensed uppercase text-bucky-red hover:underline font-bold"
-                                  >
-                                    All Items →
-                                  </button>
-                                </div>
-                                <div className="grid grid-cols-3 gap-1.5 text-center">
-                                  <div className="bg-white border border-stone-300 p-1">
-                                    <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
-                                      Deck Slots
-                                    </label>
-                                    <input
-                                      type="number"
-                                      step="0.05"
-                                      min="0"
-                                      max="16"
-                                      value={linkedMenuItem.ovenSlots}
-                                      onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "ovenSlots", e.target.value)}
-                                      className="w-full text-center font-display font-black text-xs text-bucky-red bg-transparent focus:outline-none"
-                                      title="Deck oven slots required per unit (e.g. 1.0, 0.75, 0.25, 0)"
-                                    />
-                                  </div>
-                                  <div className="bg-white border border-stone-300 p-1">
-                                    <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
-                                      Bake (m)
-                                    </label>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="90"
-                                      value={linkedMenuItem.cookTimeMins}
-                                      onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "cookTimeMins", e.target.value)}
-                                      className="w-full text-center font-display font-black text-xs text-bucky-charcoal bg-transparent focus:outline-none"
-                                      title="Oven cook / bake time in minutes"
-                                    />
-                                  </div>
-                                  <div className="bg-white border border-stone-300 p-1">
-                                    <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
-                                      Prep (m)
-                                    </label>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="60"
-                                      value={linkedMenuItem.prepTimeMins}
-                                      onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "prepTimeMins", e.target.value)}
-                                      className="w-full text-center font-display font-black text-xs text-stone-700 bg-transparent focus:outline-none"
-                                      title="Make-line prep / stretching time in minutes"
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Quick Kitchen Action Buttons */}
-                          <div className="mt-3 pt-2.5 border-t border-stone-300 flex items-center justify-between gap-1.5">
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => adjustInventoryStock(inv.id, -1)}
-                                className="px-2.5 py-1 bg-white hover:bg-stone-200 border border-bucky-charcoal font-condensed font-bold text-xs"
-                                title="Deduct 1 unit (waste / dropped dough)"
-                              >
-                                -1
-                              </button>
-                              <button
-                                onClick={() => adjustInventoryStock(inv.id, 1)}
-                                className="px-2.5 py-1 bg-white hover:bg-stone-200 border border-bucky-charcoal font-condensed font-bold text-xs"
-                                title="Add 1 unit"
-                              >
-                                +1
-                              </button>
-                              <button
-                                onClick={() => adjustInventoryStock(inv.id, inv.traySize)}
-                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-700 font-condensed uppercase font-bold text-[11px]"
-                                title={`Pull fresh tray (+${inv.traySize} ${inv.unit})`}
-                              >
-                                +{inv.traySize} Tray
-                              </button>
-                            </div>
-
-                            <button
-                              onClick={() => toggleEightySix(inv.id)}
-                              className={`px-2.5 py-1 font-condensed uppercase tracking-wider text-[11px] font-bold border border-bucky-charcoal transition ${
-                                is86
-                                  ? "bg-emerald-700 hover:bg-emerald-600 text-white"
-                                  : "bg-bucky-red hover:bg-bucky-darkred text-white"
-                              }`}
-                            >
-                              {is86 ? "Restore" : "86 Item"}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
 
               {/* KITCHEN CONSTRAINT TUNING BAR */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -5205,7 +4853,411 @@
           )}
 
           {/* ================================================================= */}
-          {/* VIEW 4: MENU EDITOR PAGE / TAB (EDIT ITEMS, PRICES, BADGES, ETC.) */}
+          {/* VIEW 4: DEDICATED LIVE INVENTORY TRACKER TAB                      */}
+          {/* ================================================================= */}
+          {activeView === "INVENTORY" && (
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 space-y-6">
+              {/* INVENTORY HEADER BANNER */}
+              <div className="bg-bucky-charcoal text-white border-2 border-bucky-charcoal p-5 vintage-shadow-red flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="bg-bucky-red text-white font-condensed uppercase text-xs px-2.5 py-0.5 tracking-widest font-bold">
+                      465 Main St • Live Kitchen & Menu Stock
+                    </span>
+                    <span className="text-xs text-emerald-300 font-condensed uppercase tracking-wider">
+                      ⚡ Auto-Deducts on Order Fire & Syncs 86'd Items Across All Screens
+                    </span>
+                  </div>
+                  <h2 className="font-display font-black text-2xl sm:text-3xl mt-1">
+                    📦 Live Kitchen & Menu Inventory Tracker ({inventory.length} Items)
+                  </h2>
+                  <p className="text-xs text-stone-300 mt-0.5">
+                    Manage 72-hr cold-fermented sourdough balls, 8x10 Detroit pans, signature toppings, and individual menu item counts in real time.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-5 text-right">
+                  <div>
+                    <span className="text-xs text-stone-400 block">16" Round / Detroit / Grandma</span>
+                    <span className="font-display font-black text-xl text-white">
+                      {roundDoughStock} <span className="text-xs font-normal text-stone-400">Rnd</span> •{" "}
+                      {detroitPanStock} <span className="text-xs font-normal text-stone-400">Det</span> •{" "}
+                      {grandmaPanStock} <span className="text-xs font-normal text-stone-400">Gma</span>
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-stone-400 block">Low / 86'd Alerts</span>
+                    <span className={`font-display font-black text-xl ${lowOr86Count > 0 ? "text-amber-400" : "text-emerald-400"}`}>
+                      {lowOr86Count > 0 ? `⚠️ ${lowOr86Count} Alerts` : "✓ All Stock Good"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveView("KDS")}
+                    className="px-3.5 py-2 bg-stone-800 hover:bg-bucky-red text-white font-condensed uppercase tracking-wider text-xs font-bold border border-stone-600 transition"
+                  >
+                    🔥 Go to Kitchen KDS ({orders.filter(o => o.status !== "PICKED_UP" && !o.refunded).length}) →
+                  </button>
+                </div>
+              </div>
+
+              {/* COMPLETE KITCHEN & MENU INVENTORY TRACKER SECTION */}
+              <section className="bg-white border-2 border-bucky-charcoal vintage-shadow">
+                {/* Inventory Control Bar */}
+                <div className="bg-bucky-parchment border-b-2 border-bucky-charcoal px-5 py-3.5 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <span className="bg-bucky-red text-white font-condensed uppercase text-xs font-bold px-2.5 py-1 tracking-wider">
+                        📦 Complete Stock Sheet ({filteredInventory.length} Shown)
+                      </span>
+                      <div>
+                        <h3 className="font-display font-black text-lg text-bucky-charcoal leading-none">
+                          All Menu Items, Sourdough Dough Trays, Detroit Pans & Prep Tracker
+                        </h3>
+                        <p className="text-xs text-stone-600 mt-0.5">
+                          Type exact counts inline, pull fresh trays, or 86 items to mark them <strong>Sold Out</strong> on the Customer Site & POS.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => setIsOvenTimingModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-bucky-charcoal font-condensed uppercase tracking-wider text-xs font-extrabold border-2 border-bucky-charcoal vintage-shadow-sm"
+                        title="Customize deck oven slots, bake time (mins), and prep time for every menu item"
+                      >
+                        🔥 Oven Slots & Cook Times
+                      </button>
+
+                      <button
+                        onClick={() => setIsAddCustomModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-bucky-charcoal hover:bg-stone-800 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
+                        title="Create a new custom menu item or kitchen inventory ingredient"
+                      >
+                        ➕ Add Custom Item
+                      </button>
+
+                      <button
+                        onClick={openBulkInventoryModal}
+                        className="px-3.5 py-1.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal vintage-shadow-sm"
+                        title="Open shift count sheet to manually set all inventory items at once"
+                      >
+                        ✏️ Set All Counts
+                      </button>
+
+                      <button
+                        onClick={resetAllInventoryToPar}
+                        className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
+                        title="Restock all menu items, dough trays and prep pans to full daily par"
+                      >
+                        ↻ Restock All to Par
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter Tabs & Search Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-stone-300">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { id: "ALL", label: `All (${inventory.length})` },
+                        { id: "MENU_ALL", label: `🍕 All Menu Items (${inventory.filter(i => i.isMenuItem).length})` },
+                        { id: "DOUGH", label: `🌾 Dough & Pans (${inventory.filter(i => i.category === "DOUGH").length})` },
+                        { id: "PREP", label: `🧀 Prep & Toppings (${inventory.filter(i => i.category === "PREP").length})` },
+                        { id: "ALERTS", label: `⚠️ Low / 86'd (${lowOr86Count})` },
+                        ...MENU_CATEGORIES.map(cat => ({
+                          id: cat,
+                          label: `${cat} (${inventory.filter(i => i.category === cat).length})`
+                        }))
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setKdsInventoryFilter(tab.id)}
+                          className={`px-2.5 py-1 font-condensed uppercase tracking-wider text-[11px] border transition ${
+                            kdsInventoryFilter === tab.id
+                              ? "bg-bucky-charcoal text-white border-bucky-charcoal font-bold"
+                              : "bg-white text-bucky-charcoal border-bucky-charcoal hover:bg-bucky-cream"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="relative min-w-[220px] flex-1 max-w-xs">
+                      <input
+                        type="text"
+                        placeholder="🔍 Search menu or kitchen stock..."
+                        value={kdsSearchQuery}
+                        onChange={e => setKdsSearchQuery(e.target.value)}
+                        className="w-full px-3 py-1 bg-white border-2 border-bucky-charcoal text-xs text-bucky-charcoal font-medium"
+                      />
+                      {kdsSearchQuery && (
+                        <button
+                          onClick={() => setKdsSearchQuery("")}
+                          className="absolute right-2 top-1 text-xs text-stone-500 hover:text-bucky-charcoal font-bold"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Inventory Cards Grid */}
+                <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {filteredInventory.map(inv => {
+                    const pct = Math.min(100, Math.round((inv.stock / Math.max(1, inv.dailyPar)) * 100));
+                    const is86 = inv.eightySixed || inv.stock === 0;
+                    const isLow = !is86 && inv.stock <= inv.lowThreshold;
+                    const committedInQueue = activeTicketInventoryUsage[inv.id] || 0;
+                    const linkedMenuItem = inv.isMenuItem ? menuItems.find(m => m.id === inv.id) : null;
+
+                    return (
+                      <div
+                        key={inv.id}
+                        className={`border-2 border-bucky-charcoal p-3.5 flex flex-col justify-between vintage-shadow-sm transition ${
+                          is86
+                            ? "bg-red-50/90 border-bucky-red"
+                            : isLow
+                            ? "bg-amber-50/80"
+                            : "bg-bucky-cream"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-1">
+                                <span className={`font-condensed uppercase text-[10px] tracking-widest px-1.5 py-0.5 font-bold ${
+                                  inv.category === "DOUGH"
+                                    ? "bg-bucky-charcoal text-white"
+                                    : inv.category === "PREP"
+                                    ? "bg-stone-200 text-bucky-charcoal border border-stone-400"
+                                    : "bg-bucky-red/15 text-bucky-red border border-bucky-red/40"
+                                }`}>
+                                  {inv.category === "DOUGH"
+                                    ? "🌾 DOUGH / PAN"
+                                    : inv.category === "PREP"
+                                    ? "🧀 PREP / TOPPING"
+                                    : `🍕 ${inv.category}`}
+                                </span>
+                                {inv.isCustom && (
+                                  <span className="bg-purple-900 text-white font-condensed uppercase text-[9px] px-1.5 py-0.5 font-bold">
+                                    ★ CUSTOM
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="font-display font-bold text-sm text-bucky-charcoal mt-1 leading-snug">
+                                {inv.name}
+                              </h4>
+                            </div>
+
+                            {/* Status Pill + Optional Delete for Custom Items */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {is86 ? (
+                                <span className="bg-bucky-red text-white font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
+                                  ⛔ 86'D / OUT
+                                </span>
+                              ) : isLow ? (
+                                <span className="bg-amber-400 text-bucky-charcoal border border-bucky-charcoal font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
+                                  ⚠️ LOW STOCK
+                                </span>
+                              ) : (
+                                <span className="bg-emerald-100 text-emerald-900 border border-emerald-700 font-condensed uppercase text-[10px] px-2 py-0.5 font-bold tracking-wider">
+                                  ✓ GOOD
+                                </span>
+                              )}
+                              {inv.isCustom && (
+                                <button
+                                  onClick={() => deleteCustomInventoryItem(inv.id)}
+                                  className="px-1.5 py-0.5 bg-stone-200 hover:bg-bucky-red hover:text-white text-stone-700 text-[10px] font-bold border border-stone-400"
+                                  title="Delete custom item"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <p className="text-[11px] text-stone-600 mt-1 leading-snug">
+                            {inv.notes}
+                          </p>
+
+                          {/* Stock Numbers, Inline Manual Input & Progress Bar */}
+                          <div className="mt-3 bg-white border border-stone-300 p-2.5 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-condensed uppercase text-stone-500">
+                                Set Count / Par:
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="999"
+                                  value={is86 ? 0 : inv.stock}
+                                  onChange={e => setInventoryItemField(inv.id, "stock", e.target.value)}
+                                  className={`w-14 px-1.5 py-0.5 text-right font-display font-black text-sm border border-bucky-charcoal bg-bucky-cream focus:outline-none focus:ring-1 focus:ring-bucky-red ${
+                                    is86 ? "text-bucky-red" : isLow ? "text-amber-700" : "text-bucky-charcoal"
+                                  }`}
+                                  title="Type exact current stock count"
+                                />
+                                <span className="text-xs text-stone-400 font-bold">/</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="999"
+                                  value={inv.dailyPar}
+                                  onChange={e => setInventoryItemField(inv.id, "dailyPar", e.target.value)}
+                                  className="w-12 px-1 py-0.5 text-right font-sans font-semibold text-xs text-stone-600 border border-stone-300 bg-stone-50 focus:outline-none focus:border-bucky-charcoal"
+                                  title="Type daily par target"
+                                />
+                                <span className="text-[10px] text-stone-500">{inv.unit}</span>
+                              </div>
+                            </div>
+
+                            {/* Bar */}
+                            <div className="w-full h-2 bg-stone-200 overflow-hidden border border-stone-300">
+                              <div
+                                style={{ width: `${is86 ? 0 : pct}%` }}
+                                className={`h-full transition-all ${
+                                  is86
+                                    ? "bg-bucky-red"
+                                    : isLow
+                                    ? "bg-amber-500"
+                                    : "bg-emerald-600"
+                                }`}
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between text-[10px] text-stone-600 pt-0.5">
+                              <span>
+                                In KDS Queue: <strong>{committedInQueue} {inv.unit}</strong>
+                              </span>
+                              <span className="flex items-center gap-1">
+                                Alert ≤
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="99"
+                                  value={inv.lowThreshold}
+                                  onChange={e => setInventoryItemField(inv.id, "lowThreshold", e.target.value)}
+                                  className="w-9 px-1 py-0 text-center font-bold text-[10px] border border-stone-300 bg-stone-50"
+                                  title="Low-stock alert threshold"
+                                />
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Inline Oven Slots, Cook Time & Prep Time Editor for Menu Items */}
+                          {linkedMenuItem && (
+                            <div className="mt-2 bg-bucky-parchment border border-bucky-charcoal p-2 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="font-condensed uppercase text-[10px] tracking-wider font-bold text-bucky-charcoal">
+                                  🔥 Oven Slots & Bake Timing
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsOvenTimingModalOpen(true)}
+                                  className="text-[10px] font-condensed uppercase text-bucky-red hover:underline font-bold"
+                                >
+                                  All Items →
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-3 gap-1.5 text-center">
+                                <div className="bg-white border border-stone-300 p-1">
+                                  <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
+                                    Deck Slots
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.05"
+                                    min="0"
+                                    max="16"
+                                    value={linkedMenuItem.ovenSlots}
+                                    onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "ovenSlots", e.target.value)}
+                                    className="w-full text-center font-display font-black text-xs text-bucky-red bg-transparent focus:outline-none"
+                                    title="Deck oven slots required per unit (e.g. 1.0, 0.75, 0.25, 0)"
+                                  />
+                                </div>
+                                <div className="bg-white border border-stone-300 p-1">
+                                  <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
+                                    Bake (m)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="90"
+                                    value={linkedMenuItem.cookTimeMins}
+                                    onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "cookTimeMins", e.target.value)}
+                                    className="w-full text-center font-display font-black text-xs text-bucky-charcoal bg-transparent focus:outline-none"
+                                    title="Oven cook / bake time in minutes"
+                                  />
+                                </div>
+                                <div className="bg-white border border-stone-300 p-1">
+                                  <label className="block font-condensed uppercase text-[9px] text-stone-500 font-bold">
+                                    Prep (m)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="60"
+                                    value={linkedMenuItem.prepTimeMins}
+                                    onChange={e => updateItemOvenAndTiming(linkedMenuItem.id, "prepTimeMins", e.target.value)}
+                                    className="w-full text-center font-display font-black text-xs text-stone-700 bg-transparent focus:outline-none"
+                                    title="Make-line prep / stretching time in minutes"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Quick Kitchen Action Buttons */}
+                        <div className="mt-3 pt-2.5 border-t border-stone-300 flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => adjustInventoryStock(inv.id, -1)}
+                              className="px-2.5 py-1 bg-white hover:bg-stone-200 border border-bucky-charcoal font-condensed font-bold text-xs"
+                              title="Deduct 1 unit (waste / dropped dough)"
+                            >
+                              -1
+                            </button>
+                            <button
+                              onClick={() => adjustInventoryStock(inv.id, 1)}
+                              className="px-2.5 py-1 bg-white hover:bg-stone-200 border border-bucky-charcoal font-condensed font-bold text-xs"
+                              title="Add 1 unit"
+                            >
+                              +1
+                            </button>
+                            <button
+                              onClick={() => adjustInventoryStock(inv.id, inv.traySize)}
+                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-700 font-condensed uppercase font-bold text-[11px]"
+                              title={`Pull fresh tray (+${inv.traySize} ${inv.unit})`}
+                            >
+                              +{inv.traySize} Tray
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => toggleEightySix(inv.id)}
+                            className={`px-2.5 py-1 font-condensed uppercase tracking-wider text-[11px] font-bold border border-bucky-charcoal transition ${
+                              is86
+                                ? "bg-emerald-700 hover:bg-emerald-600 text-white"
+                                : "bg-bucky-red hover:bg-bucky-darkred text-white"
+                            }`}
+                          >
+                            {is86 ? "Restore" : "86 Item"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            </main>
+          )}
+
+          {/* ================================================================= */}
+          {/* VIEW 5: MENU EDITOR PAGE / TAB (EDIT ITEMS, PRICES, BADGES, ETC.) */}
           {/* ================================================================= */}
           {activeView === "MENU_EDITOR" && (
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
@@ -8225,7 +8277,7 @@
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-2 border-t-2 border-bucky-charcoal">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-2 border-t-2 border-bucky-charcoal">
                   <button
                     type="button"
                     onClick={e => handleStaffPinSubmit(e, "POS")}
@@ -8238,6 +8290,13 @@
                     className="py-2.5 bg-bucky-red hover:bg-bucky-darkred text-white font-condensed uppercase tracking-wider text-xs font-bold border border-bucky-charcoal"
                   >
                     🔥 KDS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => handleStaffPinSubmit(e, "INVENTORY")}
+                    className="py-2.5 bg-stone-700 hover:bg-stone-600 text-white font-condensed uppercase tracking-wider text-xs font-extrabold border border-bucky-charcoal"
+                  >
+                    📦 Stock
                   </button>
                   <button
                     type="button"
